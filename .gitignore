@@ -1,0 +1,8 @@
+.venv/
+envs/*/.venv/
+out/
+runs/
+*.whl
+__pycache__/
+.pytest_cache/
+.claude/

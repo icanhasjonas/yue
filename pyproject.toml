@@ -1,0 +1,43 @@
+[project]
+name = "yue"
+version = "0.1.0"
+description = "yue - YuE2 song generation CLI: every knob, resumable workspaces, one stage at a time"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    # UPGRADE PATH: the pin lives in uv.lock, not here.
+    #   uv lock --upgrade-package yue2-infer && uv sync && uv run pytest
+    # The CLI reaches past the public pipeline API in exactly one module
+    # (src/yuecli/engine.py: generate_tokens, synthesize internals, token_prefixes),
+    # and tests/test_upstream_contract.py pins those signatures so an upgrade
+    # that moves them fails loudly instead of rendering garbage.
+    "yue2-infer",
+]
+
+[project.optional-dependencies]
+# Linux + NVIDIA only. torch 2.10 on PyPI for linux x86_64 already ships CUDA,
+# so the default install IS the CUDA install there; this extra adds the
+# serving backend (`--backend vllm`) and NVML for `yue doctor`.
+cuda = [
+    "vllm==0.19.0; sys_platform == 'linux'",
+    "triton==3.6.0; sys_platform == 'linux'",
+    "nvidia-ml-py==13.610.43; sys_platform == 'linux'",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[project.scripts]
+yue = "yuecli.cli:main"
+
+[tool.uv.sources]
+yue2-infer = { git = "https://github.com/multimodal-art-projection/YuE", branch = "main" }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/yuecli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
