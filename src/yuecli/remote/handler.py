@@ -60,8 +60,9 @@ def run_job(job_input: dict):
     if argv[0] == "__prime__":
         yield from prime(job_input)
         return
+    from yuecli.cli import spec
     yield {"k": "worker", "gpu": gpu_name(), "worker_id": os.environ.get("RUNPOD_POD_ID"),
-           "data_center": os.environ.get("RUNPOD_DC_ID")}
+           "data_center": os.environ.get("RUNPOD_DC_ID"), "spec_hash": spec()["hash"]}
     # resolve(): the CLI resolves its workspace, and on macOS /var -> /private/var,
     # so an unresolved prefix would never match the paths the events carry.
     root = Path(tempfile.mkdtemp(prefix="yue-job-")).resolve()

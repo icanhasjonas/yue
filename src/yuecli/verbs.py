@@ -181,7 +181,7 @@ VERBS: dict[str, Verb] = {
                        "yue render --workspace runs/neon --bars 17-24         # repaint the second chorus only",
                        "yue render --workspace runs/neon --extend 30 --lyrics @longer.txt",
                    )),
-    "remix": Verb("remix", "One shot: take a song (an audio file or a workspace), change the prompt, re-enter "
+    "remix": Verb("remix", "One shot: take a song (an audio file or a workspace), change the style, re-enter "
                   "the pipeline at --from. Audio is transcribed with SheetSage2 first.",
                   (F("input", "path", "Audio file, or a yue workspace", group="Song"),
                    WORKSPACE, OUTPUT, FORMAT, FORCE, FROM, PROMPT, LYRICS, COT, SEED, DURATION, MAX_DURATION,
