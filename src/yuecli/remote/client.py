@@ -74,7 +74,7 @@ def run_remote(verb, values: dict, given: set[str], ws: Workspace, reporter, *, 
     endpoint = config.get("endpoint_id")
     if not endpoint:
         fail("no RunPod endpoint configured", ["Run `yue runpod setup` first."])
-    key = rp.api_key()
+    key = rp.job_key()
     ws.root.mkdir(parents=True, exist_ok=True)
     uploads: dict[str, bytes] = {}
     argv = remote_argv(verb, values, given, ws, uploads)

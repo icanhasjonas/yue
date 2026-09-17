@@ -11,6 +11,11 @@ on:
     paths: [src/**, pyproject.toml, uv.lock, Dockerfile, .github/workflows/image.yml]
   workflow_dispatch:
 
+# One build at a time; a newer push supersedes the one in flight.
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write

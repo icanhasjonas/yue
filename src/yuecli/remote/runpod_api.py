@@ -29,6 +29,11 @@ class RunPodError(RuntimeError):
         self.status = status
 
 
+def job_key() -> str:
+    """Jobs prefer the endpoint-restricted key; management never uses it."""
+    return os.environ.get("YUE_RUNPOD_JOB_KEY") or api_key()
+
+
 def api_key(explicit: str | None = None) -> str:
     key = explicit or os.environ.get("RUNPOD_API_KEY")
     if not key:

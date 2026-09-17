@@ -222,6 +222,9 @@ VERBS: dict[str, Verb] = {
                           F("max_workers", "int", "Upper bound on parallel GPUs (default 1)", minimum=1, group="RunPod"),
                           F("idle_timeout", "int", "Seconds a worker idles before scaling to zero (default 5)",
                             minimum=1, group="RunPod"),
+                          F("timeout_minutes", "float", "Hard cap per job, in minutes (default 10)", minimum=1,
+                            maximum=1440, group="RunPod"),
+                          F("wait_image", "bool", "Wait for the GitHub Actions build to push the image", group="RunPod"),
                           F("yes", "bool", "Do not ask before the steps that cost money", aliases=("-y",), group="RunPod"),
                           OUTPUT_FORMAT, DEBUG),
                          notes="Steps: key -> image -> registry credential -> network volume (paid) -> template -> "

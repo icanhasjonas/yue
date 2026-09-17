@@ -56,6 +56,11 @@ def setup(s, reporter) -> int:
     if not image:
         fail("no worker image", ["Push the repo so GitHub Actions builds it, then pass --image ghcr.io/<owner>/yue:<sha>."])
     cfg["image"] = image
+    # Regression (2026-09-17): the endpoint was created while GitHub Actions was still
+    # building, RunPod failed the pull with IMAGE_NOT_FOUND and stopped the workers.
+    if image.startswith("ghcr.io/"):
+        wait_for_image(image, s.get("registry_user") or gh_user(), s.get("registry_token") or gh_token(),
+                       reporter, wait=bool(s.get("wait_image")))
     say(reporter, f"✓ image {image}")
 
     # 3 registry auth (GHCR images are private unless you made the package public)
@@ -102,7 +107,8 @@ def setup(s, reporter) -> int:
     gpus = s.get("gpu") or cfg.get("gpus") or DEFAULT_GPUS
     body = {"name": "yue", "templateId": cfg["template_id"], "gpuTypeIds": gpus, "gpuCount": 1,
             "workersMin": 0, "workersMax": int(s.get("max_workers") or 1), "idleTimeout": int(s.get("idle_timeout") or 5),
-            "flashboot": True, "executionTimeoutMs": 60 * 60 * 1000, "minCudaVersion": "12.8",
+            "flashboot": True, "executionTimeoutMs": int(float(s.get("timeout_minutes") or 10) * 60 * 1000),
+            "minCudaVersion": "12.8",
             "scalerType": "QUEUE_DELAY", "scalerValue": 4}
     if cfg.get("volume_id"):
         body["networkVolumeId"] = cfg["volume_id"]
@@ -184,6 +190,46 @@ def teardown(s, reporter) -> int:
     rp.save_config(cfg)
     reporter.result("succeeded", 0, data=cfg)
     return 0
+
+
+def image_exists(image: str, user: str | None, token: str | None) -> bool:
+    """Ask GHCR for the manifest with a pull token (the same check RunPod's pull makes)."""
+    import base64
+    import json
+    import urllib.error
+    import urllib.request
+    name, tag = image[len("ghcr.io/"):].rsplit(":", 1)
+    req = urllib.request.Request(f"https://ghcr.io/token?service=ghcr.io&scope=repository:{name}:pull")
+    if user and token:
+        req.add_header("Authorization", "Basic " + base64.b64encode(f"{user}:{token}".encode()).decode())
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        bearer = json.loads(resp.read())["token"]
+    head = urllib.request.Request(f"https://ghcr.io/v2/{name}/manifests/{tag}", method="HEAD", headers={
+        "Authorization": f"Bearer {bearer}",
+        "Accept": "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, "
+                  "application/vnd.oci.image.manifest.v1+json"})
+    try:
+        with urllib.request.urlopen(head, timeout=20):
+            return True
+    except urllib.error.HTTPError as exc:
+        if exc.code in (404, 401, 403):
+            return False
+        raise
+
+
+def wait_for_image(image: str, user, token, reporter, *, wait: bool) -> None:
+    if image_exists(image, user, token):
+        return
+    if not wait:
+        fail(f"{image} is not in the registry yet (still building, or never pushed)",
+             ["Check `gh run list`, then re-run setup, or add --wait-image to wait for the build."])
+    say(reporter, f"waiting for {image} to be pushed (GitHub Actions build)...")
+    deadline = time.monotonic() + 60 * 60
+    while time.monotonic() < deadline:
+        time.sleep(30)
+        if image_exists(image, user, token):
+            return
+    fail(f"{image} did not appear within an hour")
 
 
 def pick_data_center(key: str, gpus: list[str]) -> str:

@@ -39,6 +39,8 @@ class Settings(dict):
 
 # =============================================================================== entry
 def main(argv: list[str] | None = None) -> int:
+    from . import env
+    env.load()
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] in ("help", "-h", "--help"):
         if len(argv) > 1 and argv[1] in VERBS:
