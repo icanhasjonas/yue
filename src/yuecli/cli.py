@@ -50,6 +50,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{TOOL} {importlib.metadata.version('yue')} (yue2-infer {_upstream_version()})")
         return 0
     name = argv[0]
+    if name == "runpod":  # a namespace: `yue runpod setup|status|teardown`
+        sub = argv[1] if len(argv) > 1 and not argv[1].startswith("-") else None
+        if sub is None or f"runpod {sub}" not in VERBS:
+            return report_usage_error(UsageError("`yue runpod` needs a sub-command: setup, status or teardown"))
+        name = f"runpod {sub}"
+        argv = [name, *argv[2:]]
     verb = VERBS.get(name)
     if verb is None:
         import difflib
@@ -75,6 +81,11 @@ def main(argv: list[str] | None = None) -> int:
         # (e.g. `yue decode` computing keys that chain from tokens settings).
         settings = Settings({**{k: v for k, v in base.items() if k not in parsed.values}, **parsed.values})
         settings["_switches"] = parsed.from_switches | parsed.from_args
+        if settings.get("remote") == "runpod":
+            from .remote.client import run_remote
+            ws = _workspace(settings, settings.get("prompt"), "song")
+            return run_remote(verb, settings, settings["_switches"], ws, reporter,
+                              fetch=settings.get("remote_fetch") or "all")
         handler = HANDLERS[verb.name]
         return handler(settings, reporter)
     except UsageError as err:
@@ -884,7 +895,14 @@ HANDLERS = {
     "synth": cmd_stage("synth"), "decode": cmd_stage("decode"), "render": cmd_render, "remix": cmd_remix,
     "refine": cmd_refine, "transcribe": cmd_transcribe, "import": cmd_import, "status": cmd_status, "abc-inspect": cmd_abc_inspect,
     "abc-strip": cmd_abc_strip, "abc-compare": cmd_abc_compare, "brief": cmd_brief, "doctor": cmd_doctor,
+    "runpod setup": lambda s, r: _runpod("setup", s, r), "runpod status": lambda s, r: _runpod("status", s, r),
+    "runpod teardown": lambda s, r: _runpod("teardown", s, r),
 }
+
+
+def _runpod(action: str, s: Settings, r: Reporter) -> int:
+    from .remote import setup as rp_setup
+    return getattr(rp_setup, action)(s, r)
 
 
 # =============================================================================== helpers

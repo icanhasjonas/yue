@@ -134,7 +134,14 @@ TRANSCRIBE = (
     F("render_score", "bool", "Also render the score to PDF/SVG/PNG", group="Transcription"),
 )
 
-COMMON_TAIL = (OUTPUT_FORMAT, QUIET, DEBUG)
+REMOTE = (
+    F("remote", "enum", "Run on a RunPod serverless GPU instead of this machine (`yue runpod setup` first)",
+      choices=("local", "runpod"), group="Runtime"),
+    F("remote_fetch", "enum", "What a remote run sends back: all stage artifacts, or just the audio",
+      choices=("all", "audio"), group="Runtime"),
+)
+COMMON_TAIL = (*REMOTE, OUTPUT_FORMAT, QUIET, DEBUG)
+LOCAL_TAIL = (OUTPUT_FORMAT, QUIET, DEBUG)
 PIPELINE = (WORKSPACE, OUTPUT, FORMAT, RESUME, FORCE, FROM, UNTIL,
             PROMPT, LYRICS, COT, ABC, SEED, DURATION, MAX_DURATION,
             *PLAN_SAMPLING, *TOKENS_SAMPLING, *SYNTH, *DECODE, *HOOK, *RUNTIME, *COMMON_TAIL)
@@ -175,7 +182,7 @@ VERBS: dict[str, Verb] = {
                   "the pipeline at --from. Audio is transcribed with SheetSage2 first.",
                   (F("input", "path", "Audio file, or a yue workspace", aliases=("-i",), group="Song"),
                    WORKSPACE, OUTPUT, FORMAT, FORCE, FROM, PROMPT, LYRICS, COT, SEED, DURATION, MAX_DURATION,
-                   *TOKENS_SAMPLING, *SYNTH, *DECODE, *HOOK, *TRANSCRIBE, *RUNTIME, *COMMON_TAIL),
+                   *TOKENS_SAMPLING, *SYNTH, *DECODE, *HOOK, *TRANSCRIBE, *RUNTIME, *LOCAL_TAIL),
                   notes="--from for a workspace input: plan = new score, tokens (default) = same score new "
                         "performance, synth = same performance new sound (--strength), decode = new decoder.\n"
                         "Audio input: transcribe -> score -> perform; --strength also starts the ODE from the "
@@ -190,7 +197,7 @@ VERBS: dict[str, Verb] = {
                                  group="Score hook"),
                     F("render", "bool", "Render the refined score afterwards", group="Score hook"),
                     F("validate", "bool", "Refuse a score the native ABC dialect rejects (default on)", group="Score hook"),
-                    HOOK[1], *RUNTIME, *COMMON_TAIL),
+                    HOOK[1], *RUNTIME, *LOCAL_TAIL),
                    notes="The command runs in the workspace with:\n"
                          "  YUE_WORKSPACE  YUE_ABC (edit in place)  YUE_ABC_ORIGINAL (read-only)\n"
                          "  YUE_STYLE_FILE  YUE_LYRICS_FILE  YUE_BRIEF (the upstream edit brief)  YUE_JOB",
@@ -200,7 +207,31 @@ VERBS: dict[str, Verb] = {
                    )),
     "transcribe": Verb("transcribe", "Audio -> score.abc + MIDI + annotations (SheetSage2, its own environment).",
                        (F("input", "path", "Audio file", aliases=("-i",), group="Transcription"),
-                        WORKSPACE, *TRANSCRIBE, *COMMON_TAIL)),
+                        WORKSPACE, *TRANSCRIBE, *LOCAL_TAIL)),
+    "runpod setup": Verb("runpod setup", "Deploy yue to RunPod serverless from an API key, step by step (resumable).",
+                         (F("api_key", "str", "RunPod API key (default: $RUNPOD_API_KEY)", group="RunPod"),
+                          F("image", "str", "Worker image (default ghcr.io/<gh user>/yue:<HEAD sha>)", group="RunPod"),
+                          F("public_image", "bool", "The image is public: skip the registry credential", group="RunPod"),
+                          F("registry_user", "str", "GHCR user for a private image (default: gh user)", group="RunPod"),
+                          F("registry_token", "str", "GHCR token with read:packages (default: gh auth token)", group="RunPod"),
+                          F("gpu", "list", "GPU type id, repeatable, in preference order", group="RunPod"),
+                          F("data_center", "str", "Data center id (default: best current stock for --gpu)", group="RunPod"),
+                          F("volume_gb", "int", "Network volume size (default 20)", minimum=10, group="RunPod"),
+                          F("no_volume", "bool", "No network volume: weights download on every cold start", group="RunPod"),
+                          F("no_prime", "bool", "Do not pre-download the weights onto the volume", group="RunPod"),
+                          F("max_workers", "int", "Upper bound on parallel GPUs (default 1)", minimum=1, group="RunPod"),
+                          F("idle_timeout", "int", "Seconds a worker idles before scaling to zero (default 5)",
+                            minimum=1, group="RunPod"),
+                          F("yes", "bool", "Do not ask before the steps that cost money", aliases=("-y",), group="RunPod"),
+                          OUTPUT_FORMAT, DEBUG),
+                         notes="Steps: key -> image -> registry credential -> network volume (paid) -> template -> "
+                               "endpoint (scale to zero) -> prime weights (paid job). State: ~/.config/yue/runpod.json"),
+    "runpod status": Verb("runpod status", "Show the configured endpoint, its workers and queue, and the volume.",
+                          (F("api_key", "str", "RunPod API key (default: $RUNPOD_API_KEY)"), OUTPUT_FORMAT, DEBUG)),
+    "runpod teardown": Verb("runpod teardown", "Delete the endpoint and template (and with --volume, the weights).",
+                            (F("api_key", "str", "RunPod API key (default: $RUNPOD_API_KEY)"),
+                             F("volume", "bool", "Also delete the network volume and registry credential"),
+                             F("yes", "bool", "Do not ask", aliases=("-y",)), OUTPUT_FORMAT, DEBUG)),
     "import": Verb("import", "Turn an upstream run (`yue2 generate` / SongResult.save_artifacts) into a workspace.",
                    (F("input", "path", "Upstream artifact directory (has request.json, plan.json, semantic.npy)",
                       aliases=("-i",)), WORKSPACE, OUTPUT_FORMAT, DEBUG)),
@@ -227,4 +258,4 @@ STAGE_VERBS = {"plan": "plan", "tokens": "tokens", "synth": "synth", "decode": "
 # (style/lyrics/score live as files in the workspace).
 NOT_PERSISTED = {"workspace", "output", "resume", "force", "from_stage", "until", "output_format", "quiet",
                  "debug", "prompt", "lyrics", "abc", "input", "command", "render", "validate", "bars",
-                 "extend", "source", "abc_hook", "hook_timeout", "init_audio", "strength"}
+                 "extend", "source", "abc_hook", "hook_timeout", "init_audio", "strength", "remote", "remote_fetch"}

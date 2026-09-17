@@ -23,6 +23,10 @@ cuda = [
     "nvidia-ml-py==13.610.43; sys_platform == 'linux'",
 ]
 
+# Inside the RunPod worker image only. The local CLI talks to RunPod over plain
+# HTTPS (src/yuecli/remote/runpod_api.py) and needs neither.
+worker = ["runpod==1.12.0", "hf_transfer>=0.1.8"]
+
 [dependency-groups]
 dev = ["pytest>=8"]
 

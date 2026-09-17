@@ -172,7 +172,7 @@ def parse(verb: Verb, argv: list[str], base: dict | None = None) -> Parsed:
     for f in verb.fields:
         for spelling in f.spellings():
             index[spelling] = f
-        if f.kind == "bool":
+        if f.kind == "bool" and not f.name.startswith("no_"):
             negations["--no-" + f.switch[2:]] = f
     known = sorted({*index, *negations, "--args", "--help"})
 
@@ -273,7 +273,7 @@ def render_help(verb: Verb) -> str:
         rows = []
         for f in fields:
             names = ", ".join(f.spellings())
-            if f.kind == "bool":
+            if f.kind == "bool" and not f.name.startswith("no_"):
                 names += f", --no-{f.switch[2:]}"
             elif f.kind in ("int", "float"):
                 names += " <n>"
