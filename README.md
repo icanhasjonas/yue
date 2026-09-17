@@ -195,7 +195,10 @@ The first job on a **new image** pulls about 6 GB and took 8 min. A `render --ba
 kept every token and latent outside bars 3-5 bit-identical to the source.
 
 `transcribe` and `remix` run remotely too: the image carries SheetSage2 in its own
-Python 3.11 environment. Neither has been verified on RunPod yet.
+Python 3.11 environment. Verified 2026-09-17 on an RTX A4500: a 20 s clip transcribed
+in 36 s (10 bars at 103 BPM), and its remix in a new style took 47 s of GPU stages
+(score 24 s, tokens 12 s, synth 3 s, decode 8 s). A remix of a transcribed song needs
+`--lyrics`: the words are not recovered from the recording.
 
 A job's uploads (input audio plus workspace files) are capped at about 6.7 MB:
 RunPod accepts a 10 MB request and base64 adds a third. A song as mp3 fits; as WAV
