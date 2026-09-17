@@ -11,6 +11,7 @@ held back until the files have landed, so `result` stays the last line.
 from __future__ import annotations
 
 import base64
+import json
 import shutil
 import time
 from pathlib import Path
@@ -153,15 +154,13 @@ def land(ws: Workspace, chunks: dict[str, list]) -> list[str]:
     for rel, parts in chunks.items():
         target = ws.root / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(b"".join(parts))
-    # the worker wrote absolute /tmp paths into stage.json exports; point them home
-    meta_path = ws.root / "4-audio" / "stage.json"
-    if meta_path.is_file() and "4-audio/stage.json" in chunks:
-        import json
-        meta = json.loads(meta_path.read_text())
-        if meta.get("export"):
-            meta["export"] = str(ws.root / Path(meta["export"]).name)
-            meta_path.write_text(json.dumps(meta, indent=2) + "\n")
+        data = b"".join(parts)
+        if target.suffix == ".json":
+            # the worker sends JSON with its workspace as ws://; point it at this one.
+            # (json.dumps escaping: a path with quotes/backslashes would need more, ours have none)
+            text = data.decode("utf-8")
+            data = text.replace('"ws://"', json.dumps(str(ws.root))).replace("ws://", str(ws.root) + "/").encode("utf-8")
+        target.write_bytes(data)
     return sorted(chunks)
 
 

@@ -89,6 +89,9 @@ def run_job(job_input: dict):
         code = proc.wait()
         for rel, path in _results(ws, before, job_input.get("fetch", "all")):
             data = path.read_bytes()
+            if path.suffix == ".json":
+                # stage.json / job.json record absolute worker paths (export, edit.source, ...)
+                data = _map(data.decode("utf-8"), str(ws)).encode("utf-8")
             n = max(1, -(-len(data) // CHUNK))
             for i in range(n):
                 yield {"k": "file", "path": rel, "i": i, "n": n,

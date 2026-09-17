@@ -226,7 +226,7 @@ class Pipeline:
         return (d / need).is_file()
 
     # ---- run ----------------------------------------------------------------------
-    def run(self, stages: list[str], *, force: bool, command: str) -> dict:
+    def run(self, stages: list[str], *, force: bool, command: str, warn_stale: bool = True) -> dict:
         r = self.r
         r.run_start(command, workspace=str(self.ws.root))
         r.declare([{"id": st, "kind": "stage", "description": STAGE_TEXT[st]} for st in stages])
@@ -272,7 +272,7 @@ class Pipeline:
         later = STAGES[STAGES.index(last) + 1:]
         stale = [st for st in later if self.ws.stage_meta(st) and
                  self.ws.stage_meta(st)["inputs"].get(STAGES[STAGES.index(st) - 1]) != self.ws.stage_key(STAGES[STAGES.index(st) - 1])]
-        if stale:
+        if stale and warn_stale:
             r.log(f"now stale (their input changed): {', '.join(stale)}; run `{TOOL} generate -w {self.ws.root} --resume`",
                   level="warn")
         return summary
@@ -580,7 +580,8 @@ def cmd_render(s: Settings, r: Reporter) -> int:
     stages = ["plan", "tokens", "synth", "decode"]
     if p.edit:
         # the plan stage may be fresh; tokens onward must re-run for an edit
-        summary = p.run(["plan"], force=False, command="render")
+        # warn_stale=False: tokens onward re-run on the very next line (B6, first remote --bars run)
+        summary = p.run(["plan"], force=False, command="render", warn_stale=False)
         summary2 = p.run(["tokens", "synth", "decode"], force=True, command="render")
         summary["stages"].update(summary2["stages"])
     else:

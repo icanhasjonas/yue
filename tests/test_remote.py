@@ -98,13 +98,15 @@ def test_land_replaces_received_stage_dirs_and_archives_the_old_ones(tmp_path):
     (ws.root / "2-tokens" / "semantic.npy").write_text("old")
     (ws.root / "3-latents").mkdir()
     (ws.root / "3-latents" / "latent.npy").write_text("keep")
-    meta = json.dumps({"export": "/tmp/yue-job-abc/ws/song.flac"})
+    meta = json.dumps({"export": "ws://song.flac", "edit": {"source": "ws://"}})
     landed = client.land(ws, {"2-tokens/semantic.npy": [b"ne", b"w"], "4-audio/stage.json": [meta.encode()],
                               "song.flac": [b"audio"]})
     assert (ws.root / "2-tokens" / "semantic.npy").read_text() == "new"
     assert (ws.root / "3-latents" / "latent.npy").read_text() == "keep"
     assert list((ws.root / ".history").rglob("semantic.npy"))
-    assert json.loads((ws.root / "4-audio" / "stage.json").read_text())["export"] == str(ws.root / "song.flac")
+    landed_meta = json.loads((ws.root / "4-audio" / "stage.json").read_text())
+    assert landed_meta["export"] == str(ws.root / "song.flac")
+    assert landed_meta["edit"]["source"] == str(ws.root)
     assert "song.flac" in landed
 
 
