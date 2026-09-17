@@ -243,6 +243,20 @@ def test_remix_into_an_existing_empty_workspace(tmp_path):
     assert (dst / "style.txt").read_text() == "jazz trio"
 
 
+def test_remix_from_a_transcribed_workspace(tmp_path):
+    # A `yue transcribe` workspace has a score and no seed, style or lyrics in
+    # job.json; remixing it raised KeyError: 'seed' on the first live remote run.
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "job.json").write_text('{"score_mode": "provided", "cot": "full"}')
+    (src / "score.abc").write_text((FIX / "transcribed.abc").read_text())
+    FakeEngine.calls = []
+    dst = tmp_path / "dst"
+    assert run("remix", "-i", str(src), "--workspace", str(dst), "--style", "lofi", "--lyrics", "[verse]\nla la") == 0
+    assert stages_called() == ["plan", "tokens", "synth", "decode"]
+    assert isinstance(json.loads((dst / "job.json").read_text())["seed"], int)
+
+
 def test_remix_from_synth_reuses_the_performance(tmp_path):
     src = tmp_path / "src"
     gen(src)

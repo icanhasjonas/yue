@@ -634,7 +634,12 @@ def _remix_workspace(s: Settings, r: Reporter, src: Workspace) -> int:
     if start in ("synth", "decode") and ("style" in s["_switches"] or "lyrics" in s["_switches"]):
         r.log(f"--from {start} keeps the performance, so --style/--lyrics have no effect", level="warn")
     else:
+        if run_from == "plan" and not merged.get("lyrics") and not (ws.root / "lyrics.txt").is_file():
+            fail(f"{src.root} has no lyrics: pass --lyrics",
+                 ["A transcribed song keeps the melody and chords; the words cannot be recovered from a recording."])
         _write_texts(merged, ws)
+    # A transcribed workspace was never sampled, so it has no seed to inherit.
+    _seed(merged, ws)
     p = Pipeline(merged, ws, r)
     p.score_mode = "generated" if start == "plan" else "provided"
     if start == "tokens" and (src.stage_dir("plan") / "score.abc").is_file():
