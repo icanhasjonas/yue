@@ -250,6 +250,8 @@ VERBS: dict[str, Verb] = {
                         (F("before", "path", "Original score"), F("after", "path", "Edited score"),
                          F("voices", "enum", "Which voices", choices=("both", "Vocal", "Ins")),
                          F("allow_tempo_change", "bool", "Do not count a tempo change"), OUTPUT_FORMAT, DEBUG)),
+    "spec": Verb("spec", "Print every verb and switch as JSON: the single source other front-ends (snd yue) generate from.",
+                 (F("output_format", "enum", "json (default) or stream-json", choices=("json", "stream-json")),)),
     "brief": Verb("brief", "Print the upstream score-editing brief (for an agent doing --abc-hook work).", ()),
     "doctor": Verb("doctor", "Report devices, backends, installed versions and cached weights.",
                    (F("device", "str", "auto | cuda | cuda:N | mps | cpu"), OUTPUT_FORMAT, DEBUG)),

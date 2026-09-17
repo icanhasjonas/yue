@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import json
+import os
 import random
 import re
 import shutil
@@ -83,6 +84,12 @@ def main(argv: list[str] | None = None) -> int:
         # (e.g. `yue decode` computing keys that chain from tokens settings).
         settings = Settings({**{k: v for k, v in base.items() if k not in parsed.values}, **parsed.values})
         settings["_switches"] = parsed.from_switches | parsed.from_args
+        if any(f.name == "remote" for f in verb.fields) and "remote" not in settings["_switches"]:
+            # Default: YUE_REMOTE=runpod|local (env or .env). An explicit --remote always wins,
+            # and a job.json never makes a song remote by itself (it is not persisted).
+            default = os.environ.get("YUE_REMOTE", "").strip().lower()
+            if default in ("runpod", "local"):
+                settings["remote"] = default
         if settings.get("remote") == "runpod":
             from .remote.client import run_remote_with_hooks
             src = Path(settings["input"]).expanduser() if settings.get("input") else None
@@ -854,6 +861,31 @@ def cmd_abc_compare(s: Settings, r: Reporter) -> int:
     return 0 if data["match"] else 1
 
 
+def spec() -> dict:
+    """The CLI surface as data. `hash` covers the verbs only, so a front-end can pin it."""
+    verbs = {}
+    for name, verb in VERBS.items():
+        verbs[name] = {
+            "summary": verb.summary, "notes": verb.notes or None, "examples": list(verb.examples),
+            "remote": any(f.name == "remote" for f in verb.fields),
+            "fields": [{"name": f.name, "switch": f.switch, "kind": f.kind, "help": f.help,
+                        "choices": list(f.choices) or None, "aliases": list(f.aliases) or None, "group": f.group,
+                        "minimum": f.minimum, "maximum": f.maximum} for f in verb.fields],
+        }
+    blob = json.dumps(verbs, sort_keys=True, separators=(",", ":"))
+    return {"tool": TOOL, "version": _version(), "spec_version": 1,
+            "hash": hashlib.sha256(blob.encode()).hexdigest()[:16],
+            "grammar": {"positionals": False, "args_switch": "--args", "text_file_prefix": "@",
+                        "bool_negation": "--no-<switch> (not for fields named no_*)",
+                        "precedence": ["defaults", "workspace job.json", "--args", "switches"]},
+            "stages": list(STAGES), "verbs": verbs}
+
+
+def cmd_spec(s: Settings, r: Reporter) -> int:
+    print(json.dumps(spec(), indent=2, ensure_ascii=False))
+    return 0
+
+
 def cmd_brief(s: Settings, r: Reporter) -> int:
     from .hook import BRIEF
     sys.stdout.write(BRIEF.read_text(encoding="utf-8"))
@@ -902,7 +934,7 @@ HANDLERS = {
     "generate": cmd_generate, "plan": cmd_stage("plan"), "tokens": cmd_stage("tokens"),
     "synth": cmd_stage("synth"), "decode": cmd_stage("decode"), "render": cmd_render, "remix": cmd_remix,
     "refine": cmd_refine, "transcribe": cmd_transcribe, "import": cmd_import, "status": cmd_status, "abc-inspect": cmd_abc_inspect,
-    "abc-strip": cmd_abc_strip, "abc-compare": cmd_abc_compare, "brief": cmd_brief, "doctor": cmd_doctor,
+    "abc-strip": cmd_abc_strip, "abc-compare": cmd_abc_compare, "brief": cmd_brief, "doctor": cmd_doctor, "spec": cmd_spec,
     "runpod setup": lambda s, r: _runpod("setup", s, r), "runpod status": lambda s, r: _runpod("status", s, r),
     "runpod teardown": lambda s, r: _runpod("teardown", s, r),
 }
