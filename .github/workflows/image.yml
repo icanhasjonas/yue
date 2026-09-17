@@ -36,13 +36,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Layer cache comes from the last pushed image (inline cache metadata), not the
+      # GHA cache: `type=gha,mode=max` uploaded the ~10 GB of dependency layers a
+      # SECOND time after the registry push, into a cache capped at 10 GB, and held a
+      # build in "exporting" for most of an hour. A code-only change now reuses the
+      # dependency layers already in GHCR and uploads only src.
+      # gzip level 1: layer compression was 12 of the build's minutes at the default.
       - uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64
-          push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/yue:latest
             ghcr.io/${{ github.repository_owner }}/yue:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          outputs: type=registry,compression=gzip,compression-level=1
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/yue:latest
+          cache-to: type=inline

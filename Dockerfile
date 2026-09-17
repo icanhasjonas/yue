@@ -8,7 +8,6 @@ FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy \
     HF_HOME=/runpod-volume/hf \
     HF_HUB_ENABLE_HF_TRANSFER=1 \
     PATH=/app/.venv/bin:$PATH
@@ -22,15 +21,20 @@ COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /usr/local/bin/uv
 WORKDIR /app
 # Dependencies first so a code change does not re-download torch.
 COPY pyproject.toml uv.lock README.md ./
+COPY envs/sheetsage2/pyproject.toml envs/sheetsage2/uv.lock ./envs/sheetsage2/
+# Both environments in ONE layer, hardlinked from one uv cache that is then deleted.
+# SheetSage2 (transcribe / remix from audio) needs its OWN Python 3.11 environment --
+# its pins (torch 2.8, transformers 4.45, numpy 1.24) cannot share yue2-infer's -- but
+# the nvidia-* CUDA wheels are the same versions in both. Installed as copies in two
+# layers they were ~3 GB twice, and exporting + pushing that took the build past an
+# hour; hardlinked, the layer tar stores each file once.
 # No `--extra cuda`: vLLM adds GBs of image for a backend the default torch path
 # (CUDA graphs) does not need. Add it back here when --backend vllm is wanted.
-RUN uv sync --frozen --no-dev --no-install-project --extra worker
-# SheetSage2 (transcribe / remix from audio) in its OWN Python 3.11 environment:
-# its pins (torch 2.8, transformers 4.45, numpy 1.24) cannot share yue2-infer's.
-# Costs a second torch (~4 GB of image). Same layout as a local checkout, so
-# yuecli.transcribe finds it at envs/sheetsage2/.venv without any container special case.
-COPY envs/sheetsage2/pyproject.toml envs/sheetsage2/uv.lock ./envs/sheetsage2/
-RUN uv sync --frozen --project envs/sheetsage2 --python 3.11
+# Same layout as a local checkout, so yuecli.transcribe finds envs/sheetsage2/.venv.
+RUN UV_CACHE_DIR=/app/.uv-cache UV_LINK_MODE=hardlink sh -c '\
+    uv sync --frozen --no-dev --no-install-project --extra worker \
+ && uv sync --frozen --project envs/sheetsage2 --python 3.11 \
+ && rm -rf /app/.uv-cache'
 COPY src ./src
 RUN uv sync --frozen --no-dev --extra worker
 
