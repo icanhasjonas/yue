@@ -60,7 +60,9 @@ def run_job(job_input: dict):
     if argv[0] == "__prime__":
         yield from prime(job_input)
         return
-    root = Path(tempfile.mkdtemp(prefix="yue-job-"))
+    # resolve(): the CLI resolves its workspace, and on macOS /var -> /private/var,
+    # so an unresolved prefix would never match the paths the events carry.
+    root = Path(tempfile.mkdtemp(prefix="yue-job-")).resolve()
     ws = root / "ws"
     ws.mkdir()
     try:
