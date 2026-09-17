@@ -299,6 +299,12 @@ class Pipeline:
             artifacts.append({"path": str(self.ws.root / "score.abc"), "kind": "score/abc"})
         if plan.truncated:
             self.r.log("the score hit --plan-max-tokens before its end token (truncated)", level="warn", task_id="plan")
+        cap = s.get("duration") or s.get("max_duration")
+        score_seconds = (meta.get("score") or {}).get("seconds")
+        if cap and score_seconds and score_seconds > float(cap) + 1:
+            flag = "--duration" if s.get("duration") else "--max-duration"
+            self.r.log(f"the score runs {score_seconds:.0f}s but {flag} {float(cap):g} will cut the song at "
+                       f"{float(cap):g}s, mid-score", level="warn", task_id="plan", code="yue.score_exceeds_duration")
         return {**meta, "_partial": partial, "_artifacts": artifacts}
 
     def stage_tokens(self, inputs: dict) -> dict:
@@ -786,13 +792,13 @@ def cmd_status(s: Settings, r: Reporter) -> int:
         previous = meta["key"] if meta else None
     job = ws.job()
     data = {"workspace": str(ws.root), "seed": job.get("seed"), "score_mode": job.get("score_mode"),
-            "cot": job.get("cot"), "stages": stages}
+            "cot": job.get("cot") or DEFAULTS["cot"], "stages": stages}
     edited = ws.read_text("score.abc")
     planned = ws.stage_dir("plan") / "score.abc"
     if edited and planned.is_file() and planned.read_text(encoding="utf-8") != edited:
         data["score_edited"] = True
     if r.mode == "text":
-        print(f"{ws.root}  (seed {job.get('seed')}, cot {job.get('cot')}, score {job.get('score_mode')})")
+        print(f"{ws.root}  (seed {data['seed']}, cot {data['cot']}, score {data['score_mode']})")
         for stage, info in stages.items():
             extra = " ".join(f"{k}={v}" for k, v in info.items() if k not in ("state", "key", "edit", "score"))
             print(f"  {DIRS[stage]:10} {info['state']:8} {extra}")

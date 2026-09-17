@@ -144,6 +144,24 @@ def test_duration_forces_an_exact_token_count(tmp_path):
     assert tokens[4] == 250
 
 
+def test_a_cap_shorter_than_the_score_warns_before_the_tokens_run(tmp_path, capsys):
+    # Regression (live run 2026-09-17): --max-duration 45 on a 96 s score only
+    # warned AFTER 133 s of token sampling, as a generic "truncated".
+    gen(tmp_path / "ws", "--max-duration", "45", "--output-format", "stream-json")
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    warn = [i for i, e in enumerate(events) if e.get("code") == "yue.score_exceeds_duration"]
+    tokens_start = next(i for i, e in enumerate(events) if e["type"] == "task:start" and e["id"] == "tokens")
+    assert warn and warn[0] < tokens_start
+    assert "89s" in events[warn[0]]["message"] and "45s" in events[warn[0]]["message"]
+
+
+def test_status_shows_the_effective_cot_when_it_was_never_set(tmp_path, capsys):
+    run("generate", "-w", str(tmp_path / "ws"), "--prompt", "x", "--lyrics", "y", "--seed", "1")
+    capsys.readouterr()
+    run("status", "-w", str(tmp_path / "ws"))
+    assert "cot full" in capsys.readouterr().out
+
+
 def test_render_performs_an_edited_score_as_provided(tmp_path):
     ws = tmp_path / "ws"
     gen(ws)
