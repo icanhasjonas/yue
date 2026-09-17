@@ -60,6 +60,8 @@ def run_job(job_input: dict):
     if argv[0] == "__prime__":
         yield from prime(job_input)
         return
+    yield {"k": "worker", "gpu": gpu_name(), "worker_id": os.environ.get("RUNPOD_POD_ID"),
+           "data_center": os.environ.get("RUNPOD_DC_ID")}
     # resolve(): the CLI resolves its workspace, and on macOS /var -> /private/var,
     # so an unresolved prefix would never match the paths the events carry.
     root = Path(tempfile.mkdtemp(prefix="yue-job-")).resolve()
@@ -113,20 +115,35 @@ def _results(ws: Path, before: dict, fetch: str):
             yield str(rel), path
 
 
+def _map(text: str, prefix: str) -> str:
+    # Anywhere in the string, not only at its start: human `message`s embed paths
+    # mid-sentence ("20.0s -> /tmp/yue-job-x/ws/song.mp3"), found on the first remote run.
+    return text.replace(prefix + "/", "ws://").replace(prefix, "ws://")
+
+
 def _relativize(value, prefix: str):
     """Workspace paths inside events become `ws://relative` so the client can map them."""
     if isinstance(value, dict):
         for key, item in value.items():
-            if isinstance(item, str) and item.startswith(prefix):
-                value[key] = "ws://" + item[len(prefix):].lstrip("/")
+            if isinstance(item, str):
+                value[key] = _map(item, prefix)
             else:
                 _relativize(item, prefix)
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            if isinstance(item, str) and item.startswith(prefix):
-                value[index] = "ws://" + item[len(prefix):].lstrip("/")
+            if isinstance(item, str):
+                value[index] = _map(item, prefix)
             else:
                 _relativize(item, prefix)
+
+
+def gpu_name() -> str:
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+                             capture_output=True, text=True, timeout=10)
+        return out.stdout.strip().splitlines()[0] if out.returncode == 0 and out.stdout.strip() else "unknown GPU"
+    except (OSError, subprocess.TimeoutExpired):
+        return "no GPU"
 
 
 def handler(job):

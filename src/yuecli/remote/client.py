@@ -100,6 +100,9 @@ def run_remote(verb, values: dict, given: set[str], ws: Workspace, reporter, *, 
                     slot[part["i"]] = base64.b64decode(part["data"])
                 elif kind == "done":
                     exit_code = int(part["exit_code"])
+                elif kind == "worker":
+                    bridge.worker = part
+                    bridge.local_log(f"worker: {part.get('gpu')} ({part.get('data_center') or 'unknown DC'})")
             if state != last_state:
                 if state == "IN_QUEUE":
                     bridge.local_log("queued: waiting for a worker (a cold start loads the image and the model)")
@@ -108,7 +111,7 @@ def run_remote(verb, values: dict, given: set[str], ws: Workspace, reporter, *, 
                 last_state = state
             if state in FINAL and not out.get("stream"):
                 break
-            if time.monotonic() - last_heartbeat > 20:
+            if state not in FINAL and time.monotonic() - last_heartbeat > 20:
                 bridge.heartbeat(state)
                 last_heartbeat = time.monotonic()
             time.sleep(1)
@@ -168,10 +171,13 @@ class Bridge:
     def __init__(self, reporter, ws: Workspace):
         self.r, self.ws = reporter, ws
         self.result: dict | None = None
+        self.worker: dict | None = None
 
     def _local(self, value):
-        if isinstance(value, str) and value.startswith("ws://"):
-            return str(self.ws.root / value[5:])
+        if isinstance(value, str) and "ws://" in value:
+            if value == "ws://":
+                return str(self.ws.root)
+            return value.replace("ws://", str(self.ws.root) + "/")
         if isinstance(value, dict):
             return {k: self._local(v) for k, v in value.items()}
         if isinstance(value, list):
@@ -232,6 +238,8 @@ class Bridge:
         result = self.result or {}
         data = dict(result.get("data") or {})
         data.update({"remote": "runpod", "job_id": job, "landed_files": len(landed)})
+        if self.worker:
+            data["worker"] = {k: v for k, v in self.worker.items() if k != "k" and v}
         if self.r.mode in ("stream-json", "json"):
             self.r.result(result.get("status", "succeeded" if exit_code == 0 else "failed"), exit_code,
                           data=data, error=result.get("error"))

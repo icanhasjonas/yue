@@ -28,6 +28,17 @@ def test_handler_runs_the_verb_and_streams_its_events(tmp_path):
     assert events[-1]["data"]["workspace"] == "ws://"
 
 
+def test_paths_inside_messages_are_mapped_both_ways(tmp_path):
+    # Regression (first remote run): "20.0s -> /tmp/yue-job-x/ws/song.mp3" kept the worker path.
+    event = {"message": "Audio: 20.0s -> /tmp/yue-job-x/ws/song.mp3 in 6.8s", "data": {"workspace": "/tmp/yue-job-x/ws"}}
+    handler._relativize(event, "/tmp/yue-job-x/ws")
+    assert event == {"message": "Audio: 20.0s -> ws://song.mp3 in 6.8s", "data": {"workspace": "ws://"}}
+    bridge = client.Bridge(Reporter("json"), Workspace(tmp_path / "ws"))
+    local = bridge._local(event)
+    assert local["message"] == f"Audio: 20.0s -> {tmp_path / 'ws' / 'song.mp3'} in 6.8s"
+    assert local["data"]["workspace"] == str((tmp_path / "ws").resolve())
+
+
 def test_handler_refuses_path_traversal():
     with pytest.raises(ValueError, match="refusing workspace path"):
         list(handler.run_job({"argv": ["status"], "files": {"../evil": b64("x")}}))
