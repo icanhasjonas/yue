@@ -618,7 +618,7 @@ def _remix_workspace(s: Settings, r: Reporter, src: Workspace) -> int:
     ws = Workspace(Path(s["workspace"])) if s.get("workspace") else _next_free(src.root.parent / f"{src.root.name}-remix")
     if ws.exists():
         fail(f"{ws.root} is not empty; remix writes a NEW workspace")
-    ws.root.mkdir(parents=True)
+    ws.root.mkdir(parents=True, exist_ok=True)  # an empty dir is fine: the RunPod worker pre-creates it
     job = src.job()
     for name in ("style.txt", "lyrics.txt", "score.abc"):
         if (src.root / name).is_file():
@@ -762,7 +762,7 @@ def cmd_import(s: Settings, r: Reporter) -> int:
     ws = _workspace(s, f"import-{src.name}", "import")
     if ws.exists():
         fail(f"{ws.root} is not empty")
-    ws.root.mkdir(parents=True)
+    ws.root.mkdir(parents=True, exist_ok=True)
     ws.write_text("style.txt", request["style"])
     ws.write_text("lyrics.txt", request["lyrics"])
     gen = config.get("generation", {})

@@ -231,6 +231,18 @@ def test_remix_from_a_workspace_keeps_the_score_and_changes_the_style(tmp_path):
     assert (src / "style.txt").read_text() == "synthwave"
 
 
+def test_remix_into_an_existing_empty_workspace(tmp_path):
+    # The RunPod worker creates the job's workspace directory before running the
+    # verb, so remix must accept an EMPTY directory: `mkdir(parents=True)` raised
+    # "File exists" and the first live remote remix failed on it.
+    src = tmp_path / "src"
+    gen(src)
+    dst = tmp_path / "dst"
+    dst.mkdir()
+    assert run("remix", "-i", str(src), "--workspace", str(dst), "--style", "jazz trio") == 0
+    assert (dst / "style.txt").read_text() == "jazz trio"
+
+
 def test_remix_from_synth_reuses_the_performance(tmp_path):
     src = tmp_path / "src"
     gen(src)
