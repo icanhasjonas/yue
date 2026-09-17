@@ -152,6 +152,46 @@ JSON Schema are in [docs/EVENT-STREAM.md](docs/EVENT-STREAM.md). It's written to
 be reused by `img` / `vid` / `snd`. `--output-format json` prints only the final
 result object.
 
+## RunPod (remote GPU, per second)
+
+```sh
+yue runpod setup                 # guided, resumable; asks before anything that costs money
+yue generate --prompt "..." --lyrics @song.txt --remote runpod
+yue render -w runs/neon --bars 9-16 --remote runpod
+yue runpod status                # workers, queue, volume
+yue runpod teardown [--volume]   # endpoint + template (+ weights volume)
+```
+
+`--remote runpod` works on `generate`, `plan`, `tokens`, `synth`, `decode` and
+`render`. It uploads the workspace inputs and runs the same verb on a serverless
+worker. The worker streams the same run-events back, and the resulting stage
+directories land in your **local** workspace. The replaced ones move to
+`.history/`, just like a local run.
+
+| Piece | What |
+|---|---|
+| Image | `ghcr.io/<you>/yue:<sha>`, built by `.github/workflows/image.yml` on every push to `main` (about 23 min cold, faster with cache) |
+| Weights | on a network volume (`HF_HOME=/runpod-volume/hf`), downloaded once by the setup's prime job |
+| Endpoint | 24 GB GPUs in preference order (A5000, 3090, A4500, 4090, L4), 0 workers when idle, FlashBoot, 10 min job cap (`--timeout-minutes`) |
+| Keys | `RUNPOD_API_KEY` for setup, status and teardown. `YUE_RUNPOD_JOB_KEY` (a Restricted key with Read/Write on the yue endpoint only) for `--remote` runs. Both go in `.env` |
+| State | `~/.config/yue/runpod.json` holds ids, never keys |
+
+Measured on 2026-09-17 with a warm worker in EU-RO-1, for a 20 s song:
+
+| Stage | Time |
+|---|---|
+| Score | 36 s |
+| Tokens | 4 s (~131 tok/s) |
+| Synth | 2 s |
+| Decode | 7 s |
+| Total, including upload and download | 65 s |
+
+The first job on a **new image** pulls about 6 GB and took 8 min. A `render --bars 3-5` on RunPod
+kept every token and latent outside bars 3-5 bit-identical to the source.
+
+Not available remotely yet: `transcribe` and `remix`, because SheetSage2 isn't in
+the image. A single job can upload at most 10 MB of workspace inputs.
+
 ## CUDA
 
 This was built on Apple Silicon (MPS), where upstream runs but isn't officially
