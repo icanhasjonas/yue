@@ -6,6 +6,7 @@ imports it -- it runs `worker.py` there as a subprocess and reads JSON back.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -40,7 +41,10 @@ def transcribe(audio: Path, output: Path, *, melody_only: bool, device: str | No
     for flag, value in (("--device", device), ("--dtype", dtype), ("--preset", preset), ("--max-seconds", max_seconds)):
         if value is not None:
             cmd += [flag, str(value)]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # The environment has no hf_transfer, and huggingface_hub refuses to download at
+    # all when the flag is on without it (the worker image sets it for yue2's own downloads).
+    env = {k: v for k, v in os.environ.items() if k != "HF_HUB_ENABLE_HF_TRANSFER"}
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     result = None
     for line in proc.stdout:
         line = line.strip()
