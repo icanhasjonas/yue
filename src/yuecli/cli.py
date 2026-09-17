@@ -166,7 +166,7 @@ class Pipeline:
     def style(self) -> str:
         text = self.ws.read_text("style.txt")
         if text is None:
-            fail("no style: pass --prompt (it is saved to <workspace>/style.txt)")
+            fail("no style: pass --style (it is saved to <workspace>/style.txt)")
         return text
 
     def lyrics(self) -> str:
@@ -632,7 +632,7 @@ def _remix_workspace(s: Settings, r: Reporter, src: Workspace) -> int:
     merged = Settings({**job, **{k: v for k, v in s.items() if v is not None}})
     merged["_switches"] = s["_switches"]
     if start in ("synth", "decode") and ("style" in s["_switches"] or "lyrics" in s["_switches"]):
-        r.log(f"--from {start} keeps the performance, so --prompt/--lyrics have no effect", level="warn")
+        r.log(f"--from {start} keeps the performance, so --style/--lyrics have no effect", level="warn")
     else:
         _write_texts(merged, ws)
     p = Pipeline(merged, ws, r)

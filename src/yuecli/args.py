@@ -199,7 +199,7 @@ def parse(verb: Verb, argv: list[str], base: dict | None = None) -> Parsed:
             continue
         if not token.startswith("-") or token == "-":
             fail(f"unexpected bare word `{token}` for `{TOOL} {verb.name}`",
-                 ["There are no positional arguments: every value is named, e.g. `--prompt \"...\"`.",
+                 ["There are no positional arguments: every value is named, e.g. `--style \"...\"`.",
                   f"Run `{TOOL} {verb.name} --help` for the switches this verb takes."])
         name, inline = (token.split("=", 1) + [None])[:2] if token.startswith("--") and "=" in token else (token, None)
         if name in negations:

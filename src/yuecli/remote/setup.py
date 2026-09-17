@@ -140,7 +140,7 @@ def setup(s, reporter) -> int:
             rp.save_config(cfg)
     reporter.result("succeeded", 0, data={k: v for k, v in cfg.items()})
     if reporter.mode == "text":
-        print(f"ready: yue generate --prompt \"...\" --lyrics @song.txt --remote runpod")
+        print(f"ready: yue generate --style \"...\" --lyrics @song.txt --remote runpod   (or: snd yue generate ...)")
     return 0
 
 

@@ -2,7 +2,7 @@
 
 Job input (built by remote/client.py):
 
-    {"argv":  ["generate", "--prompt", "...", ...],   # the verb and its switches, minus -w/--remote
+    {"argv":  ["generate", "--style", "...", ...],    # the verb and its switches, minus --workspace/--remote
      "files": {"style.txt": "<b64>", "2-tokens/semantic.npy": "<b64>", ...},  # the workspace to start from
      "fetch": "all" | "audio"}                        # which results to send back
 
