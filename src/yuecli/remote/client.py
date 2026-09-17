@@ -22,7 +22,7 @@ from . import runpod_api as rp
 
 SEND_DIRS = ("1-plan", "2-tokens", "3-latents")  # 4-audio is an output, never an input
 SEND_FILES = ("job.json", "style.txt", "lyrics.txt", "score.abc")
-LOCAL_ONLY = {"workspace", "output", "remote", "remote_fetch", "output_format", "quiet", "debug"}
+LOCAL_ONLY = {"workspace", "output", "remote", "remote_fetch", "output_format", "quiet", "debug", "dry_run"}
 MAX_INPUT_BYTES = 9 * 1024 * 1024  # RunPod caps a /run body at 10 MB
 FINAL = {"COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"}
 
@@ -122,7 +122,7 @@ def run_remote_with_hooks(verb, values: dict, given: set[str], ws: Workspace, re
         return 0
     rest = dict(values)
     rest["resume"] = True
-    rest_given = (base_given | {"resume"}) - {"prompt", "lyrics", "abc"}  # the texts now live in the workspace
+    rest_given = (base_given | {"resume"}) - {"style", "lyrics", "abc"}  # the texts now live in the workspace
     return run_remote(verb, rest, rest_given, ws, reporter, fetch=fetch)
 
 
@@ -138,6 +138,8 @@ def run_remote(verb, values: dict, given: set[str], ws: Workspace, reporter, *, 
     argv = remote_argv(verb, values, given, ws, uploads)
     files, inputs = encode_payload(ws, uploads)
     payload = {"argv": argv, "files": files, "inputs": inputs, "fetch": fetch}
+    if values.get("dry_run"):
+        return dry_run(payload, endpoint, reporter)
     job = rp.run(endpoint, key, payload)
     bridge = Bridge(reporter, ws)
     bridge.local_log(f"RunPod job {job} submitted to endpoint {endpoint}")
@@ -195,6 +197,25 @@ def run_remote(verb, values: dict, given: set[str], ws: Workspace, reporter, *, 
     if final or (exit_code or 0) != 0:
         bridge.finish(exit_code if exit_code is not None else 1, landed, job)
     return exit_code if exit_code is not None else 1
+
+
+def describe_payload(payload: dict, endpoint: str) -> dict:
+    size = lambda b64: len(b64) * 3 // 4  # noqa: E731
+    return {"endpoint": endpoint, "argv": payload["argv"], "fetch": payload["fetch"],
+            "files": {k: size(v) for k, v in payload["files"].items()},
+            "inputs": {k: size(v) for k, v in payload["inputs"].items()},
+            "encoded_bytes": sum(len(v) for part in ("files", "inputs") for v in payload[part].values())}
+
+
+def dry_run(payload: dict, endpoint: str, reporter) -> int:
+    summary = describe_payload(payload, endpoint)
+    if reporter.mode == "text":
+        print(json.dumps(summary, indent=2))
+        reporter.human("dry run: nothing was submitted")
+    else:
+        reporter.run_start("remote", data={"remote": "runpod", "dry_run": True})
+        reporter.result("succeeded", 0, data={"dry_run": True, **summary})
+    return 0
 
 
 def land(ws: Workspace, chunks: dict[str, list]) -> list[str]:

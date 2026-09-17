@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
             if verb.name == "remix" and not settings.get("workspace") and src and src.is_dir():
                 ws = _next_free(src.parent / f"{src.name}-remix")
             else:
-                slug = settings.get("prompt") or (src.stem if src else None)
+                slug = settings.get("style") or (src.stem if src else None)
                 ws = _workspace(settings, slug, verb.name)
             return run_remote_with_hooks(verb, settings, settings["_switches"], ws, reporter,
                                          fetch=settings.get("remote_fetch") or "all")
@@ -495,14 +495,14 @@ def _seed(s: Settings, ws: Workspace) -> None:
 
 def _write_texts(s: Settings, ws: Workspace) -> None:
     ws.root.mkdir(parents=True, exist_ok=True)
-    if s.get("prompt") is not None:
-        ws.write_text("style.txt", s["prompt"])
+    if s.get("style") is not None:
+        ws.write_text("style.txt", s["style"])
     if s.get("lyrics") is not None:
         ws.write_text("lyrics.txt", s["lyrics"])
 
 
 def _stage_range(s: Settings, default_from="plan", default_until="decode") -> list[str]:
-    a = STAGES.index(s.get("from_stage") or default_from)
+    a = STAGES.index(s.get("from") or default_from)
     b = STAGES.index(s.get("until") or default_until)
     if b < a:
         fail(f"--until {STAGES[b]} comes before --from {STAGES[a]}")
@@ -526,7 +526,7 @@ def _finish(p: Pipeline, summary: dict, command: str) -> int:
 
 
 def cmd_generate(s: Settings, r: Reporter) -> int:
-    ws = _workspace(s, s.get("prompt"), "song")
+    ws = _workspace(s, s.get("style"), "song")
     stages = _stage_range(s)
     if ws.exists() and ws.job() and not (s.get("resume") or s.get("force")) and "workspace" in s["_switches"]:
         if any(ws.stage_meta(st) for st in STAGES):
@@ -538,7 +538,7 @@ def cmd_generate(s: Settings, r: Reporter) -> int:
     if s.get("abc"):
         ws.write_text("score.abc", Path(s["abc"]).expanduser().read_text(encoding="utf-8"))
         p.score_mode = "provided"
-    elif "prompt" in s["_switches"] or "lyrics" in s["_switches"] or "cot" in s["_switches"]:
+    elif "style" in s["_switches"] or "lyrics" in s["_switches"] or "cot" in s["_switches"]:
         if p.score_mode == "provided" and not s.get("resume"):
             p.score_mode = "generated"
     if p.score_mode == "provided" and s.get("resume"):
@@ -558,14 +558,14 @@ def cmd_stage(stage: str):
         if not s.get("workspace"):
             if stage != "plan":
                 fail(f"`{TOOL} {stage}` works on a workspace: pass -w <dir>")
-        ws = _workspace(s, s.get("prompt"), "song")
+        ws = _workspace(s, s.get("style"), "song")
         _write_texts(s, ws)
         _seed(s, ws)
         p = Pipeline(s, ws, r)
         if stage == "plan" and s.get("abc"):
             ws.write_text("score.abc", Path(s["abc"]).expanduser().read_text(encoding="utf-8"))
             p.score_mode = "provided"
-        elif stage == "plan" and ("prompt" in s["_switches"] or "lyrics" in s["_switches"]):
+        elif stage == "plan" and ("style" in s["_switches"] or "lyrics" in s["_switches"]):
             p.score_mode = "generated"
         p.persist()
         summary = p.run([stage], force=bool(s.get("force")), command=stage)
@@ -614,7 +614,7 @@ def cmd_remix(s: Settings, r: Reporter) -> int:
 
 
 def _remix_workspace(s: Settings, r: Reporter, src: Workspace) -> int:
-    start = s.get("from_stage") or "tokens"
+    start = s.get("from") or "tokens"
     ws = Workspace(Path(s["workspace"])) if s.get("workspace") else _next_free(src.root.parent / f"{src.root.name}-remix")
     if ws.exists():
         fail(f"{ws.root} is not empty; remix writes a NEW workspace")
@@ -631,7 +631,7 @@ def _remix_workspace(s: Settings, r: Reporter, src: Workspace) -> int:
             shutil.copytree(src.stage_dir(stage), ws.stage_dir(stage))
     merged = Settings({**job, **{k: v for k, v in s.items() if v is not None}})
     merged["_switches"] = s["_switches"]
-    if start in ("synth", "decode") and ("prompt" in s["_switches"] or "lyrics" in s["_switches"]):
+    if start in ("synth", "decode") and ("style" in s["_switches"] or "lyrics" in s["_switches"]):
         r.log(f"--from {start} keeps the performance, so --prompt/--lyrics have no effect", level="warn")
     else:
         _write_texts(merged, ws)
@@ -661,9 +661,9 @@ def _remix_audio(s: Settings, r: Reporter, audio: Path) -> int:
     from .transcribe import transcribe
     if not s.get("lyrics"):
         fail("remixing audio needs --lyrics: the words cannot be recovered from a recording yet")
-    if not s.get("prompt"):
-        fail("remixing audio needs --prompt: the target style")
-    ws = _workspace(s, f"{audio.stem}-{s['prompt']}", "remix")
+    if not s.get("style"):
+        fail("remixing audio needs --style: the target style")
+    ws = _workspace(s, f"{audio.stem}-{s['style']}", "remix")
     if ws.exists():
         fail(f"{ws.root} is not empty; remix writes a NEW workspace")
     _write_texts(s, ws)
@@ -698,13 +698,13 @@ def _remix_audio(s: Settings, r: Reporter, audio: Path) -> int:
 
 def cmd_refine(s: Settings, r: Reporter) -> int:
     from .hook import run_hook
-    if not s.get("workspace") or not s.get("command"):
-        fail("`yue refine` needs -w <workspace> and --with '<command>'")
+    if not s.get("workspace") or not s.get("with"):
+        fail("`yue refine` needs --workspace <dir> and --with '<command>'")
     ws = Workspace(Path(s["workspace"]))
     r.run_start("refine", workspace=str(ws.root))
     r.declare([{"id": "refine", "kind": "hook", "description": "External score edit"}])
-    r.start("refine", f"Running: {s['command']}")
-    report = run_hook(ws, s["command"], timeout=s.get("hook_timeout"), validate=bool(s.validate),
+    r.start("refine", f"Running: {s['with']}")
+    report = run_hook(ws, s["with"], timeout=s.get("hook_timeout"), validate=bool(s.validate),
                       log=lambda m: r.log(m, task_id="refine"))
     r.artifact("refine", path=str(ws.root / "score.abc"), kind="text", mime="text/vnd.abc")
     r.end("refine", "succeeded", data=report, message=f"Refined: changed {', '.join(report['changed']) or 'nothing'}")
@@ -869,7 +869,7 @@ def spec() -> dict:
             "summary": verb.summary, "notes": verb.notes or None, "examples": list(verb.examples),
             "remote": any(f.name == "remote" for f in verb.fields),
             "fields": [{"name": f.name, "switch": f.switch, "kind": f.kind, "help": f.help,
-                        "choices": list(f.choices) or None, "aliases": list(f.aliases) or None, "group": f.group,
+                        "choices": list(f.choices) or None, "short": next((s for s in f.spellings() if not s.startswith("--")), None), "group": f.group,
                         "minimum": f.minimum, "maximum": f.maximum} for f in verb.fields],
         }
     blob = json.dumps(verbs, sort_keys=True, separators=(",", ":"))

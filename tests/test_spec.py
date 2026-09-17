@@ -14,7 +14,9 @@ def test_spec_lists_every_verb_and_field(capsys):
     bars = next(f for f in render["fields"] if f["name"] == "bars")
     assert bars["switch"] == "--bars" and bars["kind"] == "str"
     cfg = next(f for f in data["verbs"]["generate"]["fields"] if f["name"] == "cfg")
-    assert cfg["maximum"] == 20 and cfg["aliases"] == ["--cfg-scale"]
+    assert cfg["maximum"] == 20 and cfg["short"] is None
+    style = next(f for f in data["verbs"]["generate"]["fields"] if f["name"] == "style")
+    assert style["short"] == "-s"
     assert data["verbs"]["status"]["remote"] is False
 
 
@@ -31,10 +33,10 @@ def test_yue_remote_env_makes_runpod_the_default_and_local_overrides(tmp_path, m
     called = []
     monkeypatch.setattr(client, "run_remote_with_hooks", lambda *a, **k: called.append(a[0].name) or 0)
     monkeypatch.setenv("YUE_REMOTE", "runpod")
-    assert cli.main(["status", "-w", str(tmp_path)]) in (0, 1)  # status is local-only: never routed
+    assert cli.main(["status", "--workspace", str(tmp_path)]) in (0, 1)  # status is local-only: never routed
     assert called == []
-    assert cli.main(["decode", "-w", str(tmp_path / "ws")]) == 0
+    assert cli.main(["decode", "--workspace", str(tmp_path / "ws")]) == 0
     assert called == ["decode"]
     # --remote local wins over the env default (and then fails locally: nothing to decode)
-    assert cli.main(["decode", "-w", str(tmp_path / "ws"), "--remote", "local"]) == 1
+    assert cli.main(["decode", "--workspace", str(tmp_path / "ws"), "--remote", "local"]) == 1
     assert called == ["decode"]

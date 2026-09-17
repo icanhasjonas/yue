@@ -12,21 +12,21 @@ GEN = VERBS["generate"]
 
 def test_bare_word_is_refused():
     with pytest.raises(UsageError, match="bare word `song.txt`"):
-        parse(GEN, ["--prompt", "x", "song.txt"])
+        parse(GEN, ["--style", "x", "song.txt"])
 
 
 def test_unknown_switch_suggests_the_nearest():
     with pytest.raises(UsageError) as err:
-        parse(GEN, ["--promt", "x"])
-    assert "unknown switch `--promt`" in str(err.value)
-    assert any("`--prompt`" in h for h in err.value.hints)
+        parse(GEN, ["--stlye", "x"])
+    assert "unknown switch `--stlye`" in str(err.value)
+    assert any("`--style`" in h for h in err.value.hints)
 
 
 def test_value_switch_without_value_aborts_at_end_and_before_a_switch():
     with pytest.raises(UsageError, match="`--seed` needs a value"):
         parse(GEN, ["--seed"])
-    with pytest.raises(UsageError, match="`--prompt` needs a value"):
-        parse(GEN, ["--prompt", "--lyrics", "x"])
+    with pytest.raises(UsageError, match="`--style` needs a value"):
+        parse(GEN, ["--style", "--lyrics", "x"])
 
 
 def test_scalar_twice_is_refused():
@@ -57,9 +57,40 @@ def test_bool_flags_and_negation():
         parse(GEN, ["--offload-ar=yes"])
 
 
-def test_aliases_and_inline_values():
-    v = parse(GEN, ["-w", "ws", "--style=dark folk", "--from", "tokens", "--cfg-scale", "2"]).values
-    assert v == {"workspace": "ws", "prompt": "dark folk", "from_stage": "tokens", "cfg": 2.0}
+def test_short_letters_and_inline_values():
+    v = parse(GEN, ["--workspace", "ws", "-s", "dark folk", "-f", "tokens", "--cfg=2", "-o", "x.flac", "-m", "m"]).values
+    assert v == {"workspace": "ws", "style": "dark folk", "from": "tokens", "cfg": 2.0, "output": "x.flac", "model": "m"}
+
+
+def test_vocabulary_matches_img_one_long_name_and_shared_letters():
+    """Same rules as img tests/args/switch-vocabulary.test.ts (2026-09-17)."""
+    from yuecli.args import SHORT_SWITCHES
+    for verb in VERBS.values():
+        for f in verb.fields:
+            longs = [s for s in f.spellings() if s.startswith("--")]
+            assert longs == [f.switch], (verb.name, f.name, longs)
+            for short in (s for s in f.spellings() if not s.startswith("--")):
+                assert f.name in SHORT_SWITCHES[short[1:]], (verb.name, f.name, short)
+    # the letters snd reserves for other concepts must not reach yue fields of another meaning
+    for retired in (["-w", "ws"], ["-q"], ["-y"], ["--prompt", "x"], ["--cfg-scale", "2"], ["--out", "x"]):
+        with pytest.raises(UsageError):
+            parse(GEN, retired)
+
+
+def test_every_help_example_parses(tmp_path, monkeypatch):
+    """A help example is documentation; it must survive the real parser (img: tests/docs-commands.test.ts)."""
+    import shlex
+    monkeypatch.chdir(tmp_path)
+    for verb in VERBS.values():
+        for example in verb.examples:
+            words = shlex.split(example.split("  #", 1)[0])
+            for word in words:  # an @file reference only has to exist, not to be a real song
+                if word.startswith("@") and len(word) > 1:
+                    (tmp_path / word[1:]).write_text("x")
+            assert words[0] == "yue", example
+            name = " ".join(words[1:3]) if words[1] == "runpod" else words[1]
+            rest = words[3:] if words[1] == "runpod" else words[2:]
+            parse(VERBS[name], rest)
 
 
 def test_text_at_file(tmp_path):

@@ -80,7 +80,9 @@ def run_job(job_input: dict):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(base64.b64decode(blob))
         before = {p: p.stat().st_mtime_ns for p in ws.rglob("*") if p.is_file()}
-        cmd = [sys.executable, "-m", "yuecli.cli", *argv, "-w", str(ws), "--output-format", "stream-json"]
+        # The worker and the CLI it runs ship in ONE image, so this spelling can
+        # only drift inside one commit -- tests/test_remote.py runs it for real.
+        cmd = [sys.executable, "-m", "yuecli.cli", *argv, "--workspace", str(ws), "--output-format", "stream-json"]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=None, text=True, bufsize=1,
                                 cwd=root, env={**os.environ, "PYTHONUNBUFFERED": "1"})
         for line in proc.stdout:

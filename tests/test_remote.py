@@ -64,12 +64,12 @@ def test_remote_argv_inlines_text_uploads_paths_and_drops_local_only(tmp_path):
     lyrics = tmp_path / "l.txt"
     lyrics.write_text("[verse]\nhi")
     verb = VERBS["render"]
-    parsed = parse(verb, ["-w", "x", "--abc", str(abc), "--lyrics", f"@{lyrics}", "--offload-ar", "--remote", "runpod",
+    parsed = parse(verb, ["--workspace", "x", "--abc", str(abc), "--lyrics", f"@{lyrics}", "--offload-ar", "--remote", "runpod",
                           "-o", "out.flac", "--steps", "8"])
     uploads = {}
     argv = client.remote_argv(verb, parsed.values, parsed.from_switches, Workspace(tmp_path / "ws"), uploads)
     assert argv[0] == "render"
-    assert "--remote" not in argv and "-w" not in argv and "--output" not in argv
+    assert "--remote" not in argv and "--workspace" not in argv and "--output" not in argv
     assert argv[argv.index("--lyrics") + 1] == "[verse]\nhi"
     assert argv[argv.index("--abc") + 1] == "inputs/abc.abc" and uploads["abc.abc"] == b"X:1"
     assert "--offload-ar" in argv and argv[argv.index("--steps") + 1] == "8"
@@ -82,7 +82,7 @@ def test_remote_argv_uploads_a_workspace_input_for_remix(tmp_path):
     (src.root / "4-audio").mkdir()
     (src.root / "4-audio" / "audio.flac").write_bytes(b"big")
     verb = VERBS["remix"]
-    parsed = parse(verb, ["-i", str(src.root), "--prompt", "jazz", "--remote", "runpod"])
+    parsed = parse(verb, ["-i", str(src.root), "--style", "jazz", "--remote", "runpod"])
     uploads = {}
     argv = client.remote_argv(verb, parsed.values, parsed.from_switches, Workspace(tmp_path / "dst"), uploads)
     assert argv[argv.index("--input") + 1] == "inputs/input"
@@ -113,7 +113,7 @@ def test_abc_hook_runs_locally_between_remote_runs(tmp_path, monkeypatch, capsys
 
     monkeypatch.setattr(client, "run_remote", fake_run_remote)
     hook = "python3 -c \"import os,pathlib;p=pathlib.Path(os.environ['YUE_ABC']);p.write_text(p.read_text().replace('Q:1/4=100','Q:1/4=80'))\""
-    assert cli.main(["generate", "-w", str(ws), "--prompt", "x", "--lyrics", "y", "--remote", "runpod",
+    assert cli.main(["generate", "--workspace", str(ws), "--style", "x", "--lyrics", "y", "--remote", "runpod",
                      "--abc-hook", hook]) == 0
     # first run: until plan, NOT final (no result yet); second: resume to the end, final
     assert calls == [("generate", "plan", False, False, False), ("generate", None, True, False, True)]
@@ -194,10 +194,10 @@ def test_remote_run_end_to_end_with_a_scripted_runpod(tmp_path, monkeypatch, cap
     monkeypatch.setattr(rp, "stream", lambda e, j, k: feed.pop(0))
     monkeypatch.setattr(client.time, "sleep", lambda s: None)
     ws = tmp_path / "ws"
-    code = cli.main(["generate", "-w", str(ws), "--prompt", "x", "--lyrics", "y", "--remote", "runpod",
+    code = cli.main(["generate", "--workspace", str(ws), "--style", "x", "--lyrics", "y", "--remote", "runpod",
                      "--output-format", "stream-json"])
     assert code == 0
-    assert sent["argv"][:3] == ["generate", "--prompt", "x"]
+    assert sent["argv"][:3] == ["generate", "--style", "x"]
     assert (ws / "song.flac").read_bytes() == b"FLAC"
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert [e["seq"] for e in events] == list(range(1, len(events) + 1))
@@ -208,5 +208,5 @@ def test_remote_run_end_to_end_with_a_scripted_runpod(tmp_path, monkeypatch, cap
 
 def test_remote_without_setup_says_how(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(rp, "load_config", lambda: {})
-    assert cli.main(["generate", "-w", str(tmp_path / "ws"), "--prompt", "x", "--lyrics", "y", "--remote", "runpod"]) == 1
+    assert cli.main(["generate", "--workspace", str(tmp_path / "ws"), "--style", "x", "--lyrics", "y", "--remote", "runpod"]) == 1
     assert "yue runpod setup" in capsys.readouterr().err

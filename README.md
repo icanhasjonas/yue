@@ -32,18 +32,18 @@ Hugging Face cache.
 ## Use
 
 ```sh
-yue generate --prompt "dark folk, female vocal, cello" --lyrics @song.txt
-yue generate -w runs/neon --resume --tokens-temperature 0.9    # redo tokens, synth, decode
-yue plan -w runs/neon --prompt "..." --lyrics @song.txt       # just the score
-yue render -w runs/neon                                         # perform an edited score.abc
-yue render -w runs/neon --bars 17-24                            # repaint bars 17-24, keep the rest
-yue render -w runs/neon --extend 30 --lyrics @longer.txt        # continue the song
-yue synth  -w runs/neon --synth-seed 3 --steps 48               # same performance, new sound
-yue decode -w runs/neon --vae legacy --decode full -o legacy.flac
-yue remix  -i runs/neon --prompt "acoustic jazz trio"           # same score, new style
-yue remix  -i song.mp3 --lyrics @words.txt --prompt "metal" --cot melody
+yue generate --style "dark folk, female vocal, cello" --lyrics @song.txt
+yue generate --workspace runs/neon --resume --tokens-temperature 0.9    # redo tokens, synth, decode
+yue plan --workspace runs/neon --style "..." --lyrics @song.txt       # just the score
+yue render --workspace runs/neon                                         # perform an edited score.abc
+yue render --workspace runs/neon --bars 17-24                            # repaint bars 17-24, keep the rest
+yue render --workspace runs/neon --extend 30 --lyrics @longer.txt        # continue the song
+yue synth  --workspace runs/neon --synth-seed 3 --steps 48               # same performance, new sound
+yue decode --workspace runs/neon --vae legacy --decode full -o legacy.flac
+yue remix  -i runs/neon --style "acoustic jazz trio"           # same score, new style
+yue remix  -i song.mp3 --lyrics @words.txt --style "metal" --cot melody
 yue transcribe -i song.mp3                                      # audio -> score.abc (SheetSage2)
-yue status -w runs/neon
+yue status --workspace runs/neon
 yue <verb> --help                                               # every switch, generated
 ```
 
@@ -60,6 +60,11 @@ It's the same as `img` / `vid` / `snd`:
   (snake_case keys).
 - Precedence runs `defaults < workspace job.json < --args < switches`.
 - Any text switch takes `@file`.
+- One long name per switch. Single letters are shared with img/vid/snd and mean
+  the same thing everywhere: `-s` style, `-i` input, `-o` output, `-m` model,
+  `-d` debug, `-f` from. `--workspace` and `--quiet` get no letter because
+  `-w` / `-q` are `--wait` / `--quality` in snd.
+- `yue spec` prints all of it as JSON. `snd yue` is generated from that output.
 
 ## Workspaces
 
@@ -93,7 +98,7 @@ release default, so an upgrade that retunes a default is inherited.
 
 | Group | Switches | Upstream default |
 |---|---|---|
-| Song | `--prompt` (`--style`), `--lyrics`, `--cot full\|melody\|off`, `--abc`, `--seed`, `--duration` (exact), `--max-duration` | `full`, random seed (recorded) |
+| Song | `--style` (`-s`), `--lyrics`, `--cot full\|melody\|off`, `--abc`, `--seed`, `--duration` (exact), `--max-duration` | `full`, random seed (recorded) |
 | Score sampling | `--plan-seed --plan-temperature --plan-top-p --plan-top-k --plan-repetition-penalty --plan-penalty-window --plan-min-tokens --plan-max-tokens` | .7 / .9 / 30 / 1.005 / 100 / 32 / 4096 |
 | Performance sampling | `--tokens-*` (same eight), `--cfg` | 1.0 / .95 / 100 / 1.2 / 50 / 200 / 9000, cfg 1.0 (1.01 off) |
 | Synthesis | `--steps --solver midpoint\|euler\|heun --synth-seed --strength --init-audio --attention sdpa\|math\|flash --query-chunk` | 32, midpoint |
@@ -130,7 +135,7 @@ so `yue status` prints both numbers.
 shell command after the score exists and before anything is performed:
 
 ```sh
-yue generate --prompt "city pop" --lyrics @l.txt \
+yue generate --style "city pop" --lyrics @l.txt \
   --abc-hook 'claude -p "Read $YUE_BRIEF. Reharmonize $YUE_ABC with modern jazz
               voicings, keep every melody note. Edit the file in place." \
               --allowedTools Read,Edit'
@@ -156,8 +161,8 @@ result object.
 
 ```sh
 yue runpod setup                 # guided, resumable; asks before anything that costs money
-yue generate --prompt "..." --lyrics @song.txt --remote runpod
-yue render -w runs/neon --bars 9-16 --remote runpod
+yue generate --style "..." --lyrics @song.txt --remote runpod
+yue render --workspace runs/neon --bars 9-16 --remote runpod
 yue runpod status                # workers, queue, volume
 yue runpod teardown [--volume]   # endpoint + template (+ weights volume)
 ```

@@ -29,6 +29,16 @@ from typing import Any, Callable, NoReturn
 
 TOOL = "yue"
 
+# Mirrors img/src/args/derive.ts SHORT_SWITCHES (2026-09-17): a letter means the
+# same field on every tool, is derived here and never declared per verb, and a
+# field has exactly one long name. `-w` is --wait and `-q` --quality over there,
+# so yue's --workspace and --quiet get no letter.
+SHORT_SWITCHES: dict[str, tuple[str, ...]] = {
+    "p": ("prompt",), "t": ("text",), "i": ("input",), "o": ("output",), "m": ("model",), "d": ("debug",),
+    "a": ("aspect",), "q": ("quality",), "n": ("count",), "s": ("style",), "v": ("verbose",), "w": ("wait",),
+    "f": ("from",),
+}
+
 
 class UsageError(Exception):
     def __init__(self, message: str, hints: list[str] | None = None):
@@ -46,7 +56,6 @@ class Field:
     kind: str  # str | text | path | int | float | bool | enum | json | list
     help: str
     choices: tuple[str, ...] = ()
-    aliases: tuple[str, ...] = ()  # "-m", "--out", ... spelled as typed
     group: str = "Options"
     minimum: float | None = None
     maximum: float | None = None
@@ -57,7 +66,8 @@ class Field:
         return "--" + self.name.replace("_", "-")
 
     def spellings(self) -> list[str]:
-        return [self.switch, *self.aliases]
+        """ONE long name, plus a single letter only where SHORT_SWITCHES assigns one."""
+        return [self.switch, *(f"-{letter}" for letter, names in SHORT_SWITCHES.items() if self.name in names)]
 
 
 @dataclass(frozen=True)

@@ -1,8 +1,8 @@
 """Every verb's surface, declared once. `--help`, parsing and `--args` all derive from these.
 
-Names follow img/vid/snd where a concept is shared (`--prompt`, `--lyrics`,
-`--seed`, `--duration`, `--input`, `--output/-o`, `--format`, `--model/-m`,
-`--debug/-d`), and name the pipeline stage where it is not: a sampling knob is
+Names follow img/vid/snd where a concept is shared (`--style`, `--lyrics`,
+`--seed`, `--duration`, `--input`, `--output`, `--format`, `--model`, `--from`,
+`--debug`), and name the pipeline stage where it is not: a sampling knob is
 `--plan-*` (the score) or `--tokens-*` (the performance), an ODE knob belongs to
 synth, a decoder knob to decode. Defaults are upstream's release defaults
 (yue2.protocol.GenerationConfig) and are NOT repeated here -- an unset knob is
@@ -17,28 +17,29 @@ STAGE_CHOICES = ("plan", "tokens", "synth", "decode")
 
 # --- workspace / output ---------------------------------------------------------
 WORKSPACE = F("workspace", "path", "Song workspace directory (created if missing; default ./yue/<time>-<slug>)",
-              aliases=("-w",), group="Workspace")
+              group="Workspace")
 OUTPUT = F("output", "path", "Also export the finished song here (default <workspace>/song.<format>)",
-           aliases=("-o", "--out"), group="Workspace")
+           group="Workspace")
 FORMAT = F("format", "enum", "Export format; the 24-bit FLAC master is always kept in 4-audio/",
            choices=("flac", "wav", "mp3"), group="Workspace")
 RESUME = F("resume", "bool", "Reuse every stage whose inputs did not change; redo the stale ones", group="Workspace")
 FORCE = F("force", "bool", "Redo the stages in range even when fresh (old output moves to .history/)", group="Workspace")
-FROM = F("from_stage", "enum", "First stage to run", choices=STAGE_CHOICES, aliases=("--from",), group="Workspace")
+FROM = F("from", "enum", "First stage to run", choices=STAGE_CHOICES, group="Workspace")
 UNTIL = F("until", "enum", "Last stage to run (e.g. --until plan to stop at the score)",
           choices=STAGE_CHOICES, group="Workspace")
 OUTPUT_FORMAT = F("output_format", "enum", "text: human progress on stderr; json: one result object; "
                   "stream-json: JSONL events on stdout (docs/EVENT-STREAM.md)",
                   choices=("text", "json", "stream-json"), group="Workspace")
-QUIET = F("quiet", "bool", "No progress output (text mode)", aliases=("-q",), group="Workspace")
-DEBUG = F("debug", "bool", "Print tracebacks and the resolved settings", aliases=("-d",), group="Workspace")
+QUIET = F("quiet", "bool", "No progress output (text mode)", group="Workspace")
+DEBUG = F("debug", "bool", "Print tracebacks and the resolved settings", group="Workspace")
 
 # --- request --------------------------------------------------------------------
-PROMPT = F("prompt", "text", "Style prompt: genre, instruments, vocal, language, tempo",
-           aliases=("--style", "--tags"), group="Song")
+# `--style`, not `--prompt`: across img/vid/snd a --prompt is a free description and
+# --style is style tags (`snd suno --style "dark pop"`), which is exactly what YuE2 takes.
+PROMPT = F("style", "text", "Style tags: genre, instruments, vocal, language, tempo", group="Song")
 LYRICS = F("lyrics", "text", "Lyrics with section tags ([verse], [chorus], ...)", group="Song")
 COT = F("cot", "enum", "Symbolic planning: full = melody+chords, melody = melody only (covers), off = no score",
-        choices=("full", "melody", "off"), aliases=("--mode",), group="Song")
+        choices=("full", "melody", "off"), group="Song")
 ABC = F("abc", "path", "Perform this score instead of planning one (needs --cot full|melody)", group="Song")
 SEED = F("seed", "int", "Seed for every stage (a stage-specific seed overrides it); default random, recorded",
          minimum=0, maximum=2**63 - 1, group="Song")
@@ -65,7 +66,7 @@ def sampling(stage: str, label: str) -> tuple[Field, ...]:
 PLAN_SAMPLING = sampling("plan", "Score")  # upstream: .7 / .9 / 30 / 1.005 / 100 / 32 / 4096
 TOKENS_SAMPLING = sampling("tokens", "Performance") + (
     F("cfg", "float", "Text guidance scale; 1 = off (default 1.0, 1.01 with --cot off). Doubles token cost",
-      aliases=("--cfg-scale",), minimum=0, maximum=20, group="Performance sampling (tokens stage)"),
+      minimum=0, maximum=20, group="Performance sampling (tokens stage)"),
 )  # upstream: 1.0 / .95 / 100 / 1.2 / 50 / 200 / 9000
 
 SYNTH = (
@@ -97,7 +98,7 @@ DECODE = (
 )
 
 RUNTIME = (
-    F("model", "str", "YuE2 checkpoint: HF repo or local path (default m-a-p/YuE2-3B)", aliases=("-m",), group="Runtime"),
+    F("model", "str", "YuE2 checkpoint: HF repo or local path (default m-a-p/YuE2-3B)", group="Runtime"),
     F("revision", "str", "Checkpoint revision", group="Runtime"),
     F("device", "str", "auto | cuda | cuda:N | mps | cpu", group="Runtime"),
     F("backend", "enum", "torch (CUDA graphs on CUDA), torch-eager, vllm (CUDA + --extra cuda)",
@@ -139,6 +140,8 @@ REMOTE = (
       choices=("local", "runpod"), group="Runtime"),
     F("remote_fetch", "enum", "What a remote run sends back: all stage artifacts, or just the audio",
       choices=("all", "audio"), group="Runtime"),
+    F("dry_run", "bool", "With --remote runpod: show the job that WOULD be submitted (argv, files, sizes) and stop. "
+      "A submitted job is billed and cannot be taken back", group="Runtime"),
 )
 COMMON_TAIL = (*REMOTE, OUTPUT_FORMAT, QUIET, DEBUG)
 LOCAL_TAIL = (OUTPUT_FORMAT, QUIET, DEBUG)
@@ -154,33 +157,33 @@ def _only(*fields: Field) -> tuple[Field, ...]:
 VERBS: dict[str, Verb] = {
     "generate": Verb("generate", "Style + lyrics -> score -> tokens -> latents -> song. Runs every stage; "
                      "--from/--until narrow it, --resume skips the fresh ones.", PIPELINE, examples=(
-        'yue generate --prompt "synthwave pop, female vocal" --lyrics @song.txt',
-        "yue generate -w runs/neon --resume --tokens-temperature 0.9   # redo tokens, synth, decode",
-        'yue generate --prompt "..." --lyrics @l.txt --until plan --abc-hook \'claude -p "$(yue brief)"\'',
+        'yue generate --style "synthwave pop, female vocal" --lyrics @song.txt',
+        "yue generate --workspace runs/neon --resume --tokens-temperature 0.9   # redo tokens, synth, decode",
+        'yue generate --style "..." --lyrics @l.txt --until plan --abc-hook \'claude -p "$(yue brief)"\'',
     )),
     "plan": Verb("plan", "Stage 1 only: write the score (score.abc) for a style and lyrics.",
                  _only(WORKSPACE, PROMPT, LYRICS, COT, ABC, SEED, FORCE, *PLAN_SAMPLING, *HOOK, *RUNTIME, *COMMON_TAIL),
-                 examples=('yue plan -w runs/neon --prompt "dark folk" --lyrics @l.txt',)),
+                 examples=('yue plan --workspace runs/neon --style "dark folk" --lyrics @l.txt',)),
     "tokens": Verb("tokens", "Stage 2 only: perform the workspace's plan as semantic tokens.",
                    _only(WORKSPACE, SEED, DURATION, MAX_DURATION, FORCE, *TOKENS_SAMPLING, *RUNTIME, *COMMON_TAIL)),
     "synth": Verb("synth", "Stage 3 only: flow-match acoustic latents from the workspace's tokens.",
                   _only(WORKSPACE, SEED, FORCE, *SYNTH, *RUNTIME, *COMMON_TAIL),
-                  examples=("yue synth -w runs/neon --synth-seed 7 --steps 48   # same performance, new detail",)),
+                  examples=("yue synth --workspace runs/neon --synth-seed 7 --steps 48   # same performance, new detail",)),
     "decode": Verb("decode", "Stage 4 only: decode the workspace's latents to audio.",
                    _only(WORKSPACE, OUTPUT, FORMAT, FORCE, *DECODE, *RUNTIME, *COMMON_TAIL),
-                   examples=("yue decode -w runs/neon --vae legacy --decode full -o neon-legacy.flac",)),
+                   examples=("yue decode --workspace runs/neon --vae legacy --decode full -o neon-legacy.flac",)),
     "render": Verb("render", "Perform a score: the workspace's score.abc (or --abc). With --bars, repaint only "
                    "those bars and keep the rest; with --extend, continue the song.",
                    (WORKSPACE, OUTPUT, FORMAT, FORCE, ABC, PROMPT, LYRICS, COT, SEED, DURATION, MAX_DURATION,
                     *RENDER, *TOKENS_SAMPLING, *SYNTH, *DECODE, *HOOK, *RUNTIME, *COMMON_TAIL),
                    examples=(
-                       "yue render -w runs/neon                      # after editing runs/neon/score.abc",
-                       "yue render -w runs/neon --bars 17-24         # repaint the second chorus only",
-                       "yue render -w runs/neon --extend 30 --lyrics @longer.txt",
+                       "yue render --workspace runs/neon                      # after editing runs/neon/score.abc",
+                       "yue render --workspace runs/neon --bars 17-24         # repaint the second chorus only",
+                       "yue render --workspace runs/neon --extend 30 --lyrics @longer.txt",
                    )),
     "remix": Verb("remix", "One shot: take a song (an audio file or a workspace), change the prompt, re-enter "
                   "the pipeline at --from. Audio is transcribed with SheetSage2 first.",
-                  (F("input", "path", "Audio file, or a yue workspace", aliases=("-i",), group="Song"),
+                  (F("input", "path", "Audio file, or a yue workspace", group="Song"),
                    WORKSPACE, OUTPUT, FORMAT, FORCE, FROM, PROMPT, LYRICS, COT, SEED, DURATION, MAX_DURATION,
                    *TOKENS_SAMPLING, *SYNTH, *DECODE, *HOOK, *TRANSCRIBE, *RUNTIME, *COMMON_TAIL),
                   notes="--from for a workspace input: plan = new score, tokens (default) = same score new "
@@ -188,12 +191,12 @@ VERBS: dict[str, Verb] = {
                         "Audio input: transcribe -> score -> perform; --strength also starts the ODE from the "
                         "audio itself (EXPERIMENTAL).",
                   examples=(
-                      'yue remix -i runs/neon --prompt "acoustic jazz trio, male vocal"',
-                      'yue remix -i song.mp3 --lyrics @words.txt --prompt "heavy metal" --cot melody',
+                      'yue remix -i runs/neon --style "acoustic jazz trio, male vocal"',
+                      'yue remix -i song.mp3 --lyrics @words.txt --style "heavy metal" --cot melody',
                       'yue remix -i runs/neon --from synth --strength 0.6 --synth-seed 3',
                   )),
     "refine": Verb("refine", "Run an external tool on a workspace's score, validate it, then (optionally) render.",
-                   (WORKSPACE, F("command", "str", "Shell command; it edits $YUE_ABC in place", aliases=("--with",),
+                   (WORKSPACE, F("with", "str", "Shell command; it edits $YUE_ABC in place",
                                  group="Score hook"),
                     F("render", "bool", "Render the refined score afterwards", group="Score hook"),
                     F("validate", "bool", "Refuse a score the native ABC dialect rejects (default on)", group="Score hook"),
@@ -202,11 +205,11 @@ VERBS: dict[str, Verb] = {
                          "  YUE_WORKSPACE  YUE_ABC (edit in place)  YUE_ABC_ORIGINAL (read-only)\n"
                          "  YUE_STYLE_FILE  YUE_LYRICS_FILE  YUE_BRIEF (the upstream edit brief)  YUE_JOB",
                    examples=(
-                       "yue refine -w runs/neon --with 'claude -p \"Read $YUE_BRIEF. Reharmonize $YUE_ABC "
+                       "yue refine --workspace runs/neon --with 'claude -p \"Read $YUE_BRIEF. Reharmonize $YUE_ABC "
                        "as modern jazz. Edit it in place.\" --allowedTools Read,Edit' --render",
                    )),
     "transcribe": Verb("transcribe", "Audio -> score.abc + MIDI + annotations (SheetSage2, its own environment).",
-                       (F("input", "path", "Audio file", aliases=("-i",), group="Transcription"),
+                       (F("input", "path", "Audio file", group="Transcription"),
                         WORKSPACE, *TRANSCRIBE, *COMMON_TAIL)),
     "runpod setup": Verb("runpod setup", "Deploy yue to RunPod serverless from an API key, step by step (resumable).",
                          (F("api_key", "str", "RunPod API key (default: $RUNPOD_API_KEY)", group="RunPod"),
@@ -225,7 +228,7 @@ VERBS: dict[str, Verb] = {
                           F("timeout_minutes", "float", "Hard cap per job, in minutes (default 10)", minimum=1,
                             maximum=1440, group="RunPod"),
                           F("wait_image", "bool", "Wait for the GitHub Actions build to push the image", group="RunPod"),
-                          F("yes", "bool", "Do not ask before the steps that cost money", aliases=("-y",), group="RunPod"),
+                          F("yes", "bool", "Do not ask before the steps that cost money", group="RunPod"),
                           OUTPUT_FORMAT, DEBUG),
                          notes="Steps: key -> image -> registry credential -> network volume (paid) -> template -> "
                                "endpoint (scale to zero) -> prime weights (paid job). State: ~/.config/yue/runpod.json"),
@@ -234,16 +237,16 @@ VERBS: dict[str, Verb] = {
     "runpod teardown": Verb("runpod teardown", "Delete the endpoint and template (and with --volume, the weights).",
                             (F("api_key", "str", "RunPod API key (default: $RUNPOD_API_KEY)"),
                              F("volume", "bool", "Also delete the network volume and registry credential"),
-                             F("yes", "bool", "Do not ask", aliases=("-y",)), OUTPUT_FORMAT, DEBUG)),
+                             F("yes", "bool", "Do not ask"), OUTPUT_FORMAT, DEBUG)),
     "import": Verb("import", "Turn an upstream run (`yue2 generate` / SongResult.save_artifacts) into a workspace.",
-                   (F("input", "path", "Upstream artifact directory (has request.json, plan.json, semantic.npy)",
-                      aliases=("-i",)), WORKSPACE, OUTPUT_FORMAT, DEBUG)),
+                   (F("input", "path", "Upstream artifact directory (has request.json, plan.json, semantic.npy)"),
+                    WORKSPACE, OUTPUT_FORMAT, DEBUG)),
     "status": Verb("status", "Show a workspace's stages, what is fresh, and the score/token timing.",
                    (WORKSPACE, OUTPUT_FORMAT, DEBUG)),
     "abc-inspect": Verb("abc-inspect", "Validate a score in the native dialect and print its events.",
-                        (F("input", "path", "Score file", aliases=("-i",)), OUTPUT_FORMAT, DEBUG)),
+                        (F("input", "path", "Score file"), OUTPUT_FORMAT, DEBUG)),
     "abc-strip": Verb("abc-strip", "Remove chord symbols (for --cot melody), proving the melody is unchanged.",
-                      (F("input", "path", "Score file", aliases=("-i",)), F("output", "path", "New score file", aliases=("-o",)),
+                      (F("input", "path", "Score file"), F("output", "path", "New score file"),
                        F("keep_voice", "enum", "Keep both melodies or silence one", choices=("both", "Vocal", "Ins")),
                        OUTPUT_FORMAT, DEBUG)),
     "abc-compare": Verb("abc-compare", "Compare two scores' sounding notes and meter (exit 1 on a difference).",
@@ -261,6 +264,6 @@ STAGE_VERBS = {"plan": "plan", "tokens": "tokens", "synth": "synth", "decode": "
 
 # Fields persisted in job.json -- the knobs, not the one-off actions or the texts
 # (style/lyrics/score live as files in the workspace).
-NOT_PERSISTED = {"workspace", "output", "resume", "force", "from_stage", "until", "output_format", "quiet",
-                 "debug", "prompt", "lyrics", "abc", "input", "command", "render", "validate", "bars",
+NOT_PERSISTED = {"workspace", "output", "resume", "force", "from", "until", "output_format", "quiet",
+                 "debug", "style", "lyrics", "abc", "input", "with", "render", "validate", "bars", "dry_run",
                  "extend", "source", "abc_hook", "hook_timeout", "init_audio", "strength", "remote", "remote_fetch"}

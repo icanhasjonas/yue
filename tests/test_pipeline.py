@@ -68,7 +68,7 @@ def stages_called():
 
 
 def gen(ws, *extra):
-    return run("generate", "-w", str(ws), "--prompt", "synthwave", "--lyrics", "[verse]\nhi", "--seed", "42", *extra)
+    return run("generate", "--workspace", str(ws), "--style", "synthwave", "--lyrics", "[verse]\nhi", "--seed", "42", *extra)
 
 
 def test_generate_writes_every_stage_and_the_song(tmp_path):
@@ -93,7 +93,7 @@ def test_resume_with_nothing_changed_runs_nothing(tmp_path):
     ws = tmp_path / "ws"
     gen(ws)
     FakeEngine.calls = []
-    assert run("generate", "-w", str(ws), "--resume") == 0
+    assert run("generate", "--workspace", str(ws), "--resume") == 0
     assert stages_called() == []
 
 
@@ -101,7 +101,7 @@ def test_changing_a_tokens_knob_redoes_tokens_and_everything_after(tmp_path):
     ws = tmp_path / "ws"
     gen(ws)
     FakeEngine.calls = []
-    assert run("generate", "-w", str(ws), "--resume", "--tokens-temperature", "0.8") == 0
+    assert run("generate", "--workspace", str(ws), "--resume", "--tokens-temperature", "0.8") == 0
     assert stages_called() == ["tokens", "synth", "decode"]
     assert (ws / ".history").is_dir()  # the replaced stages were archived, not deleted
 
@@ -110,7 +110,7 @@ def test_single_stage_decode_with_another_vae_only_decodes(tmp_path):
     ws = tmp_path / "ws"
     gen(ws)
     FakeEngine.calls = []
-    assert run("decode", "-w", str(ws), "--vae", "legacy", "--decode", "full", "-o", str(tmp_path / "x.wav"),
+    assert run("decode", "--workspace", str(ws), "--vae", "legacy", "--decode", "full", "-o", str(tmp_path / "x.wav"),
                "--format", "wav") == 0
     assert FakeEngine.calls == [("decode", "legacy", "full", 1024)]
     assert (tmp_path / "x.wav").is_file()
@@ -121,8 +121,8 @@ def test_single_stage_decode_with_another_vae_only_decodes(tmp_path):
 
 def test_stage_needs_its_upstream(tmp_path, capsys):
     ws = tmp_path / "ws"
-    run("plan", "-w", str(ws), "--prompt", "x", "--lyrics", "y", "--seed", "1")
-    assert run("synth", "-w", str(ws)) == 1
+    run("plan", "--workspace", str(ws), "--style", "x", "--lyrics", "y", "--seed", "1")
+    assert run("synth", "--workspace", str(ws)) == 1
     assert "needs `tokens` first" in capsys.readouterr().err
 
 
@@ -156,9 +156,9 @@ def test_a_cap_shorter_than_the_score_warns_before_the_tokens_run(tmp_path, caps
 
 
 def test_status_shows_the_effective_cot_when_it_was_never_set(tmp_path, capsys):
-    run("generate", "-w", str(tmp_path / "ws"), "--prompt", "x", "--lyrics", "y", "--seed", "1")
+    run("generate", "--workspace", str(tmp_path / "ws"), "--style", "x", "--lyrics", "y", "--seed", "1")
     capsys.readouterr()
-    run("status", "-w", str(tmp_path / "ws"))
+    run("status", "--workspace", str(tmp_path / "ws"))
     assert "cot full" in capsys.readouterr().out
 
 
@@ -167,13 +167,13 @@ def test_render_performs_an_edited_score_as_provided(tmp_path):
     gen(ws)
     (ws / "score.abc").write_text(SMOKE.replace("Q:1/4=100", "Q:1/4=120"))
     FakeEngine.calls = []
-    assert run("render", "-w", str(ws)) == 0
+    assert run("render", "--workspace", str(ws)) == 0
     assert stages_called() == ["plan", "tokens", "synth", "decode"]
     assert FakeEngine.calls[0] == ("plan", 42, True)
     assert json.loads((ws / "job.json").read_text())["score_mode"] == "provided"
     # and a resume afterwards keeps performing the provided score instead of re-planning
     FakeEngine.calls = []
-    assert run("generate", "-w", str(ws), "--resume") == 0
+    assert run("generate", "--workspace", str(ws), "--resume") == 0
     assert stages_called() == []
 
 
@@ -181,7 +181,7 @@ def test_render_bars_keeps_head_and_tail_and_anchors(tmp_path):
     ws = tmp_path / "ws"
     gen(ws)
     FakeEngine.calls = []
-    assert run("render", "-w", str(ws), "--bars", "13-28", "--anchor-margin", "10") == 0
+    assert run("render", "--workspace", str(ws), "--bars", "13-28", "--anchor-margin", "10") == 0
     tokens = [c for c in FakeEngine.calls if c[0] == "tokens"][0]
     # bars 13-28 at 100 BPM 4/4 = frames [720, 1680): keep 720, sample exactly 960, tail 540
     assert tokens[2:5] == (720, 540, 960)
@@ -195,7 +195,7 @@ def test_render_extend_keeps_everything_and_forbids_ending_early(tmp_path):
     ws = tmp_path / "ws"
     gen(ws)
     FakeEngine.calls = []
-    assert run("render", "-w", str(ws), "--extend", "20") == 0
+    assert run("render", "--workspace", str(ws), "--extend", "20") == 0
     tokens = [c for c in FakeEngine.calls if c[0] == "tokens"][0]
     assert tokens[2] == 2220 and tokens[5] == 500
 
@@ -224,7 +224,7 @@ def test_remix_from_a_workspace_keeps_the_score_and_changes_the_style(tmp_path):
     gen(src)
     FakeEngine.calls = []
     dst = tmp_path / "dst"
-    assert run("remix", "-i", str(src), "-w", str(dst), "--prompt", "jazz trio") == 0
+    assert run("remix", "-i", str(src), "--workspace", str(dst), "--style", "jazz trio") == 0
     assert stages_called() == ["plan", "tokens", "synth", "decode"]
     assert FakeEngine.calls[0][2] is True  # provided score, not a new plan
     assert (dst / "style.txt").read_text() == "jazz trio"
@@ -235,7 +235,7 @@ def test_remix_from_synth_reuses_the_performance(tmp_path):
     src = tmp_path / "src"
     gen(src)
     FakeEngine.calls = []
-    assert run("remix", "-i", str(src), "-w", str(tmp_path / "d"), "--from", "synth", "--synth-seed", "3",
+    assert run("remix", "-i", str(src), "--workspace", str(tmp_path / "d"), "--from", "synth", "--synth-seed", "3",
                "--strength", "0.5") == 0
     assert stages_called() == ["synth", "decode"]
     assert FakeEngine.calls[0][4] == 0.5
@@ -245,7 +245,7 @@ def test_stream_json_events_are_ordered_and_result_is_last(tmp_path, capsys):
     ws = tmp_path / "ws"
     gen(ws)
     capsys.readouterr()
-    assert run("generate", "-w", str(ws), "--resume", "--vae", "legacy", "--output-format", "stream-json") == 0
+    assert run("generate", "--workspace", str(ws), "--resume", "--vae", "legacy", "--output-format", "stream-json") == 0
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     types = [e["type"] for e in lines]
     assert types[0] == "run:start" and types[1] == "task:declare"
@@ -260,7 +260,7 @@ def test_json_output_is_one_object(tmp_path, capsys):
     ws = tmp_path / "ws"
     gen(ws)
     capsys.readouterr()
-    assert run("status", "-w", str(ws), "--output-format", "json") == 0
+    assert run("status", "--workspace", str(ws), "--output-format", "json") == 0
     data = json.loads(capsys.readouterr().out)
     assert data["status"] == "succeeded" and data["data"]["stages"]["decode"]["state"] == "ok"
 
