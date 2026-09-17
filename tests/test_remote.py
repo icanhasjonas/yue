@@ -210,3 +210,25 @@ def test_remote_without_setup_says_how(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(rp, "load_config", lambda: {})
     assert cli.main(["generate", "--workspace", str(tmp_path / "ws"), "--style", "x", "--lyrics", "y", "--remote", "runpod"]) == 1
     assert "yue runpod setup" in capsys.readouterr().err
+
+
+def test_setup_retires_workers_left_on_the_previous_template(monkeypatch, capsys):
+    # B11: after repointing the endpoint, a FlashBoot-restarted worker on the old
+    # template served two live remix jobs with the image the fix was not in.
+    from types import SimpleNamespace
+
+    from yuecli.remote import setup as rsetup
+    calls = []
+
+    def fake_rest(method, path, key, body=None):
+        calls.append((method, path))
+        if method == "GET":
+            return {"workers": [{"id": "old1", "templateId": "tplOld", "imageName": "ghcr.io/x/yue:aaaaaaaaaaaaaaaa"},
+                                {"id": "new1", "templateId": "tplNew", "imageName": "ghcr.io/x/yue:bbbbbbbbbbbb"}]}
+        return None
+
+    monkeypatch.setattr(rp, "rest", fake_rest)
+    rsetup.retire_stale_workers("ep", "tplNew", "k", SimpleNamespace(mode="text"))
+    assert ("DELETE", "/pods/old1") in calls
+    assert ("DELETE", "/pods/new1") not in calls
+    assert "retired worker old1" in capsys.readouterr().err

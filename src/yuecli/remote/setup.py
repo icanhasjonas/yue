@@ -120,6 +120,7 @@ def setup(s, reporter) -> int:
         cfg["endpoint_id"] = ep["id"]
     else:
         rp.rest("PATCH", f"/endpoints/{cfg['endpoint_id']}", key, body)
+        retire_stale_workers(cfg["endpoint_id"], cfg["template_id"], key, reporter)
     cfg["gpus"] = gpus
     rp.save_config(cfg)
     if replaced_template and replaced_template != cfg["template_id"]:
@@ -140,8 +141,29 @@ def setup(s, reporter) -> int:
             rp.save_config(cfg)
     reporter.result("succeeded", 0, data={k: v for k, v in cfg.items()})
     if reporter.mode == "text":
-        print(f"ready: yue generate --style \"...\" --lyrics @song.txt --remote runpod   (or: snd yue generate ...)")
+        print("ready: yue generate --style \"...\" --lyrics @song.txt --remote runpod   (or: snd yue generate ...)")
     return 0
+
+
+def retire_stale_workers(endpoint_id: str, template_id: str, key: str, reporter) -> None:
+    """B11: repointing an endpoint does NOT retire its existing workers. A stopped
+    worker on the previous template was restarted by FlashBoot and served two jobs
+    with the old image after setup reported the new one -- the template it came
+    from had even been deleted. Terminate every worker not on the current template."""
+    try:
+        ep = rp.rest("GET", f"/endpoints/{endpoint_id}?includeWorkers=true", key)
+    except rp.RunPodError as exc:
+        say(reporter, f"could not list workers to retire old ones: {exc}", level="warn")
+        return
+    for w in ep.get("workers") or []:
+        if w.get("templateId") == template_id:
+            continue
+        try:
+            rp.rest("DELETE", f"/pods/{w['id']}", key)
+            say(reporter, f"✓ retired worker {w['id']} (previous image {w.get('imageName', '?').rsplit(':', 1)[-1][:12]})")
+        except rp.RunPodError as exc:
+            say(reporter, f"could not retire worker {w['id']} on an old image: {exc}; "
+                          "a job may still run the previous image", level="warn")
 
 
 def prime(cfg: dict, key: str, reporter) -> None:
