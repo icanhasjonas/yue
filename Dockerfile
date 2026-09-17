@@ -25,6 +25,12 @@ COPY pyproject.toml uv.lock README.md ./
 # No `--extra cuda`: vLLM adds GBs of image for a backend the default torch path
 # (CUDA graphs) does not need. Add it back here when --backend vllm is wanted.
 RUN uv sync --frozen --no-dev --no-install-project --extra worker
+# SheetSage2 (transcribe / remix from audio) in its OWN Python 3.11 environment:
+# its pins (torch 2.8, transformers 4.45, numpy 1.24) cannot share yue2-infer's.
+# Costs a second torch (~4 GB of image). Same layout as a local checkout, so
+# yuecli.transcribe finds it at envs/sheetsage2/.venv without any container special case.
+COPY envs/sheetsage2/pyproject.toml envs/sheetsage2/uv.lock ./envs/sheetsage2/
+RUN uv sync --frozen --project envs/sheetsage2 --python 3.11
 COPY src ./src
 RUN uv sync --frozen --no-dev --extra worker
 

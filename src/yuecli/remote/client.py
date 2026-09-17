@@ -38,21 +38,24 @@ def remote_argv(verb, values: dict, given: set[str], ws: Workspace, uploads: dic
             argv.append(f.switch if value else f"--no-{f.switch[2:]}")
             continue
         if f.kind == "path":
-            if f.name in ("source",):
-                fail(f"`{f.switch}` cannot point at a local workspace with --remote runpod; "
-                     "render inside that workspace instead")
             path = Path(value).expanduser()
-            if not path.is_file():
-                fail(f"`{f.switch} {value}`: no such file")
-            rel = f"inputs/{f.name}{path.suffix}"
-            uploads[rel] = path.read_bytes()
-            value = f"ws/{rel}"  # the worker runs with cwd = the parent of ws/
+            if path.is_dir() and (path / "job.json").is_file():
+                # a workspace given as an input (remix -i ws, render --source ws): send its inputs
+                for rel, blob in workspace_files(Workspace(path)).items():
+                    uploads[f"{f.name}/{rel}"] = blob
+                value = f"inputs/{f.name}"
+            elif path.is_file():
+                rel = f"{f.name}{path.suffix}"
+                uploads[rel] = path.read_bytes()
+                value = f"inputs/{rel}"  # the worker runs with cwd = the job root; inputs/ sits beside ws/
+            else:
+                fail(f"`{f.switch} {value}`: no such file or yue workspace")
         argv += [f.switch, str(value)]
     return argv
 
 
-def collect_files(ws: Workspace, uploads: dict[str, bytes]) -> dict[str, str]:
-    files: dict[str, bytes] = dict(uploads)
+def workspace_files(ws: Workspace) -> dict[str, bytes]:
+    files: dict[str, bytes] = {}
     for name in SEND_FILES:
         path = ws.root / name
         if path.is_file():
@@ -63,14 +66,68 @@ def collect_files(ws: Workspace, uploads: dict[str, bytes]) -> dict[str, str]:
             for path in base.rglob("*"):
                 if path.is_file():
                     files[str(path.relative_to(ws.root))] = path.read_bytes()
-    size = sum(len(v) for v in files.values()) * 4 // 3
+    return files
+
+
+def encode_payload(ws: Workspace, uploads: dict[str, bytes]) -> tuple[dict[str, str], dict[str, str]]:
+    files = workspace_files(ws)
+    size = (sum(len(v) for v in files.values()) + sum(len(v) for v in uploads.values())) * 4 // 3
     if size > MAX_INPUT_BYTES:
-        fail(f"the workspace inputs are {size / 2**20:.1f} MB encoded; RunPod accepts 10 MB per job",
-             ["Large latents or init audio: run that stage locally, or trim the workspace."])
-    return {k: base64.b64encode(v).decode("ascii") for k, v in files.items()}
+        fail(f"the job inputs are {size / 2**20:.1f} MB encoded; RunPod accepts 10 MB per job",
+             ["Compress input audio to mp3/opus first, or run that stage locally."])
+    enc = lambda d: {k: base64.b64encode(v).decode("ascii") for k, v in d.items()}  # noqa: E731
+    return enc(files), enc(uploads)
 
 
-def run_remote(verb, values: dict, given: set[str], ws: Workspace, reporter, *, fetch: str = "all") -> int:
+def collect_files(ws: Workspace, uploads: dict[str, bytes]) -> dict[str, str]:
+    files, inputs = encode_payload(ws, uploads)
+    return {**files, **{f"inputs/{k}": v for k, v in inputs.items()}}
+
+
+def run_remote_with_hooks(verb, values: dict, given: set[str], ws: Workspace, reporter, *, fetch: str = "all") -> int:
+    """A score hook runs HERE (Claude Code, your editor), the GPU stages run there.
+
+    generate: remote `--until plan` -> local hook -> remote `--resume` for the rest
+    plan:     remote plan -> local hook
+    render:   local hook on the workspace's score -> remote render
+    """
+    hook = values.get("abc_hook")
+    if not hook or verb.name not in ("generate", "plan", "render", "remix"):
+        return run_remote(verb, values, given, ws, reporter, fetch=fetch)
+    from ..hook import run_hook
+    from ..verbs import VERBS
+    if verb.name == "remix":
+        fail("--abc-hook with a remote remix is not supported",
+             ["Remix first, then `yue refine -w <new workspace> --with '...'` and `yue render --remote runpod`."])
+    base_given = given - {"abc_hook", "hook_timeout"}
+    log = lambda m: reporter.log(m, task_id=None) if reporter.mode != "text" else reporter.human("hook| " + m)  # noqa: E731
+    if verb.name == "render":
+        run_hook(ws, hook, timeout=values.get("hook_timeout"), validate=True, log=log)
+        return run_remote(verb, values, base_given, ws, reporter, fetch=fetch)
+    first_verb = VERBS["generate"] if verb.name == "generate" else verb
+    first = dict(values)
+    first_given = set(base_given)
+    if verb.name == "generate":
+        first["until"] = "plan"
+        first_given.add("until")
+    code = run_remote(first_verb, first, first_given, ws, reporter, fetch="all", final=verb.name == "plan")
+    if code:
+        return code
+    report = run_hook(ws, hook, timeout=values.get("hook_timeout"), validate=True, log=log)
+    if report["changed"]:
+        job = ws.job()
+        job["score_mode"] = "provided"
+        ws.save_job(job)
+    if verb.name == "plan":
+        return 0
+    rest = dict(values)
+    rest["resume"] = True
+    rest_given = (base_given | {"resume"}) - {"prompt", "lyrics", "abc"}  # the texts now live in the workspace
+    return run_remote(verb, rest, rest_given, ws, reporter, fetch=fetch)
+
+
+def run_remote(verb, values: dict, given: set[str], ws: Workspace, reporter, *, fetch: str = "all",
+               final: bool = True) -> int:
     config = rp.load_config()
     endpoint = config.get("endpoint_id")
     if not endpoint:
@@ -79,7 +136,8 @@ def run_remote(verb, values: dict, given: set[str], ws: Workspace, reporter, *, 
     ws.root.mkdir(parents=True, exist_ok=True)
     uploads: dict[str, bytes] = {}
     argv = remote_argv(verb, values, given, ws, uploads)
-    payload = {"argv": argv, "files": collect_files(ws, uploads), "fetch": fetch}
+    files, inputs = encode_payload(ws, uploads)
+    payload = {"argv": argv, "files": files, "inputs": inputs, "fetch": fetch}
     job = rp.run(endpoint, key, payload)
     bridge = Bridge(reporter, ws)
     bridge.local_log(f"RunPod job {job} submitted to endpoint {endpoint}")
@@ -134,7 +192,8 @@ def run_remote(verb, values: dict, given: set[str], ws: Workspace, reporter, *, 
             target = Path(values["output"]).expanduser()
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(song, target)
-    bridge.finish(exit_code if exit_code is not None else 1, landed, job)
+    if final or (exit_code or 0) != 0:
+        bridge.finish(exit_code if exit_code is not None else 1, landed, job)
     return exit_code if exit_code is not None else 1
 
 
@@ -189,6 +248,17 @@ class Bridge:
         fields = {k: v for k, v in event.items() if k not in ("v", "seq", "ts", "type")}
         if kind == "result":
             self.result = fields
+            return
+        # A hook splits one command into several remote runs; the local stream stays ONE
+        # run: a single run:start, each task declared and closed once.
+        if kind == "run:start" and self.r.started:
+            return
+        if kind == "task:declare":
+            fields["tasks"] = [t for t in fields.get("tasks", []) if t["id"] not in self.r.state]
+            if not fields["tasks"]:
+                return
+        elif kind.startswith("task:") and self.r.state.get(fields.get("id")) in ("succeeded", "failed", "cancelled", "skipped") \
+                and kind != "task:declare":
             return
         if kind == "run:start":
             data = dict(fields.get("data") or {})

@@ -71,8 +71,54 @@ def test_remote_argv_inlines_text_uploads_paths_and_drops_local_only(tmp_path):
     assert argv[0] == "render"
     assert "--remote" not in argv and "-w" not in argv and "--output" not in argv
     assert argv[argv.index("--lyrics") + 1] == "[verse]\nhi"
-    assert argv[argv.index("--abc") + 1] == "ws/inputs/abc.abc" and uploads["inputs/abc.abc"] == b"X:1"
+    assert argv[argv.index("--abc") + 1] == "inputs/abc.abc" and uploads["abc.abc"] == b"X:1"
     assert "--offload-ar" in argv and argv[argv.index("--steps") + 1] == "8"
+
+
+def test_remote_argv_uploads_a_workspace_input_for_remix(tmp_path):
+    src = Workspace(tmp_path / "src")
+    src.write_text("job.json", "{}")
+    src.write_text("score.abc", "X:1")
+    (src.root / "4-audio").mkdir()
+    (src.root / "4-audio" / "audio.flac").write_bytes(b"big")
+    verb = VERBS["remix"]
+    parsed = parse(verb, ["-i", str(src.root), "--prompt", "jazz", "--remote", "runpod"])
+    uploads = {}
+    argv = client.remote_argv(verb, parsed.values, parsed.from_switches, Workspace(tmp_path / "dst"), uploads)
+    assert argv[argv.index("--input") + 1] == "inputs/input"
+    assert set(uploads) == {"input/job.json", "input/score.abc"}  # never the audio
+
+
+def test_handler_puts_inputs_beside_the_workspace_not_in_it():
+    # remix refuses a non-empty target workspace; inputs must not count, nor come back as results
+    out = list(handler.run_job({"argv": ["status"], "files": {"job.json": b64("{}")},
+                                "inputs": {"input/job.json": b64("{}")}}))
+    assert out[-1]["k"] == "done" and out[-1]["exit_code"] == 0
+    assert not [o for o in out if o["k"] == "file" and o["path"].startswith("inputs")]
+
+
+def test_abc_hook_runs_locally_between_remote_runs(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("RUNPOD_API_KEY", "k")
+    monkeypatch.setattr(rp, "load_config", lambda: {"endpoint_id": "ep"})
+    ws = tmp_path / "ws"
+    score = (Path(__file__).parent / "fixtures" / "smoke.abc").read_text()
+    calls = []
+
+    def fake_run_remote(verb, values, given, workspace, reporter, fetch="all", final=True):
+        calls.append((verb.name, values.get("until"), bool(values.get("resume")), "abc_hook" in given, final))
+        if len(calls) == 1:  # the remote plan lands a score
+            workspace.write_text("score.abc", score)
+            workspace.save_job({"seed": 1})
+        return 0
+
+    monkeypatch.setattr(client, "run_remote", fake_run_remote)
+    hook = "python3 -c \"import os,pathlib;p=pathlib.Path(os.environ['YUE_ABC']);p.write_text(p.read_text().replace('Q:1/4=100','Q:1/4=80'))\""
+    assert cli.main(["generate", "-w", str(ws), "--prompt", "x", "--lyrics", "y", "--remote", "runpod",
+                     "--abc-hook", hook]) == 0
+    # first run: until plan, NOT final (no result yet); second: resume to the end, final
+    assert calls == [("generate", "plan", False, False, False), ("generate", None, True, False, True)]
+    assert "Q:1/4=80" in (ws / "score.abc").read_text()
+    assert json.loads((ws / "job.json").read_text())["score_mode"] == "provided"
 
 
 def test_collect_files_sends_inputs_not_audio(tmp_path):

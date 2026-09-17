@@ -43,7 +43,7 @@ def _safe(rel: str) -> str:
 def prime(job_input: dict):
     """Download the weights onto the network volume (HF_HOME) so later cold starts only read them."""
     from huggingface_hub import snapshot_download
-    repos = job_input.get("repos") or ["m-a-p/YuE2-3B", "m-a-p/YuE2-Vae"]
+    repos = job_input.get("repos") or ["m-a-p/YuE2-3B", "m-a-p/YuE2-Vae", "m-a-p/SheetSage2", "m-a-p/MERT-v2-FullSong"]
     for index, repo in enumerate(repos, 1):
         yield {"k": "event", "e": {"type": "log", "level": "info", "message": f"downloading {repo} ({index}/{len(repos)})"}}
         path = snapshot_download(repo)
@@ -70,6 +70,13 @@ def run_job(job_input: dict):
     try:
         for rel, blob in (job_input.get("files") or {}).items():
             target = ws / _safe(rel)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(base64.b64decode(blob))
+        # Inputs (--input audio, --abc, a remix source workspace) live BESIDE the
+        # workspace, never in it: remix refuses a non-empty target workspace, and
+        # an input must never be sent back as a result. argv names them `inputs/...`.
+        for rel, blob in (job_input.get("inputs") or {}).items():
+            target = root / "inputs" / _safe(rel)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(base64.b64decode(blob))
         before = {p: p.stat().st_mtime_ns for p in ws.rglob("*") if p.is_file()}

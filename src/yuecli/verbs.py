@@ -182,7 +182,7 @@ VERBS: dict[str, Verb] = {
                   "the pipeline at --from. Audio is transcribed with SheetSage2 first.",
                   (F("input", "path", "Audio file, or a yue workspace", aliases=("-i",), group="Song"),
                    WORKSPACE, OUTPUT, FORMAT, FORCE, FROM, PROMPT, LYRICS, COT, SEED, DURATION, MAX_DURATION,
-                   *TOKENS_SAMPLING, *SYNTH, *DECODE, *HOOK, *TRANSCRIBE, *RUNTIME, *LOCAL_TAIL),
+                   *TOKENS_SAMPLING, *SYNTH, *DECODE, *HOOK, *TRANSCRIBE, *RUNTIME, *COMMON_TAIL),
                   notes="--from for a workspace input: plan = new score, tokens (default) = same score new "
                         "performance, synth = same performance new sound (--strength), decode = new decoder.\n"
                         "Audio input: transcribe -> score -> perform; --strength also starts the ODE from the "
@@ -207,7 +207,7 @@ VERBS: dict[str, Verb] = {
                    )),
     "transcribe": Verb("transcribe", "Audio -> score.abc + MIDI + annotations (SheetSage2, its own environment).",
                        (F("input", "path", "Audio file", aliases=("-i",), group="Transcription"),
-                        WORKSPACE, *TRANSCRIBE, *LOCAL_TAIL)),
+                        WORKSPACE, *TRANSCRIBE, *COMMON_TAIL)),
     "runpod setup": Verb("runpod setup", "Deploy yue to RunPod serverless from an API key, step by step (resumable).",
                          (F("api_key", "str", "RunPod API key (default: $RUNPOD_API_KEY)", group="RunPod"),
                           F("image", "str", "Worker image (default ghcr.io/<gh user>/yue:<HEAD sha>)", group="RunPod"),

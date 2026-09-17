@@ -84,10 +84,15 @@ def main(argv: list[str] | None = None) -> int:
         settings = Settings({**{k: v for k, v in base.items() if k not in parsed.values}, **parsed.values})
         settings["_switches"] = parsed.from_switches | parsed.from_args
         if settings.get("remote") == "runpod":
-            from .remote.client import run_remote
-            ws = _workspace(settings, settings.get("prompt"), "song")
-            return run_remote(verb, settings, settings["_switches"], ws, reporter,
-                              fetch=settings.get("remote_fetch") or "all")
+            from .remote.client import run_remote_with_hooks
+            src = Path(settings["input"]).expanduser() if settings.get("input") else None
+            if verb.name == "remix" and not settings.get("workspace") and src and src.is_dir():
+                ws = _next_free(src.parent / f"{src.name}-remix")
+            else:
+                slug = settings.get("prompt") or (src.stem if src else None)
+                ws = _workspace(settings, slug, verb.name)
+            return run_remote_with_hooks(verb, settings, settings["_switches"], ws, reporter,
+                                         fetch=settings.get("remote_fetch") or "all")
         handler = HANDLERS[verb.name]
         return handler(settings, reporter)
     except UsageError as err:
