@@ -93,7 +93,9 @@ def setup(s, reporter) -> int:
         say(reporter, f"✓ network volume {cfg['volume_id']} in {dc}")
 
     # 5 template (a new image means a new template; the endpoint is repointed below)
+    replaced_template = None
     if cfg.get("template_image") != image or not cfg.get("template_id"):
+        replaced_template = cfg.get("template_id")
         body = {"name": f"yue-{image.rsplit(':', 1)[-1][:12]}", "imageName": image, "isServerless": True,
                 "containerDiskInGb": 30, "env": {"HF_HOME": "/runpod-volume/hf" if cfg.get("volume_id") else "/root/hf"}}
         if cfg.get("registry_auth_id"):
@@ -120,6 +122,13 @@ def setup(s, reporter) -> int:
         rp.rest("PATCH", f"/endpoints/{cfg['endpoint_id']}", key, body)
     cfg["gpus"] = gpus
     rp.save_config(cfg)
+    if replaced_template and replaced_template != cfg["template_id"]:
+        # B8: every image change made a new template and orphaned the old one
+        try:
+            rp.rest("DELETE", f"/templates/{replaced_template}", key)
+            say(reporter, f"✓ removed the replaced template {replaced_template}")
+        except rp.RunPodError as exc:
+            say(reporter, f"could not remove old template {replaced_template}: {exc}", level="warn")
     say(reporter, f"✓ endpoint {cfg['endpoint_id']} ({', '.join(g.replace('NVIDIA ', '') for g in gpus)}; "
                   f"0 workers when idle)")
 
